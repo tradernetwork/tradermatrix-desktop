@@ -116,7 +116,7 @@ pub fn challenge_for(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
-fn random_token() -> Result<String, RhError> {
+pub(crate) fn random_token() -> Result<String, RhError> {
     let mut b = [0u8; 32];
     getrandom::fill(&mut b).map_err(|_| RhError::Protocol("system randomness unavailable".into()))?;
     Ok(URL_SAFE_NO_PAD.encode(b))

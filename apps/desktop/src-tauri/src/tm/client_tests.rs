@@ -265,7 +265,7 @@ async fn failed_calls_are_not_cached() {
 }
 
 #[tokio::test]
-async fn cache_ttls_are_60s_for_apex_and_300s_for_the_rest() {
+async fn cache_ttls_are_300s_for_everything_since_m20a() {
     let m = Mock::start(|r, _| ok_handler(r)).await;
     let tm = state(&m, store_with(KEY));
     tm.apex_levels("AAPL", None).await.unwrap();
@@ -275,17 +275,18 @@ async fn cache_ttls_are_60s_for_apex_and_300s_for_the_rest() {
     tm.apex_levels("AAPL", None).await.unwrap();
     tm.expected_move("AAPL").await.unwrap();
     assert_eq!(calls(&m).len(), 2);
-    // 59 s: still cached.
-    tm.advance_clock(Duration::from_secs(59));
-    tm.apex_levels("AAPL", None).await.unwrap();
-    assert_eq!(calls(&m).len(), 2);
-    // 61 s: apex refetched, expected move still cached.
-    tm.advance_clock(Duration::from_secs(2));
+    // 61 s: Apex levels used to expire here (60 s); they move slowly, so they are now cached for 300 s too.
+    tm.advance_clock(Duration::from_secs(61));
     tm.apex_levels("AAPL", None).await.unwrap();
     tm.expected_move("AAPL").await.unwrap();
-    assert_eq!(calls(&m).len(), 3);
-    // 301 s since the first expected-move fetch: refetched.
-    tm.advance_clock(Duration::from_secs(241));
+    assert_eq!(calls(&m).len(), 2);
+    // 299 s: still cached.
+    tm.advance_clock(Duration::from_secs(238));
+    tm.apex_levels("AAPL", None).await.unwrap();
+    assert_eq!(calls(&m).len(), 2);
+    // 301 s: both refetched.
+    tm.advance_clock(Duration::from_secs(2));
+    tm.apex_levels("AAPL", None).await.unwrap();
     tm.expected_move("AAPL").await.unwrap();
     assert_eq!(calls(&m).len(), 4);
     // iv_rank and snapshot use 300 s as well.
@@ -669,4 +670,414 @@ async fn watchlist_key_is_scrubbed_from_refusal_text() {
     let tm = state(&m, store_with(KEY));
     let e = tm.watchlist_add("A", "AAPL").await.unwrap_err();
     assert!(!e.to_string().contains("TESTKEY") && e.to_string().contains("[redacted]"), "{e}");
+}
+
+// ---------------------------------------------------------------- M20a: the quota gate on the real client (mock TM MCP, fake clock)
+
+mod quota_it {
+    use super::*;
+    use crate::db;
+    use crate::tm::quota::{self, Budgets, Clock, DayRow, FakeClock, Priority};
+    use std::sync::Mutex;
+
+    fn t0() -> i64 {
+        quota::utc_ms(2026, 11, 11, 15, 0, 0)
+    }
+
+    /// The exact strings TraderMatrix publishes for its limits.
+    const DAILY: &str = "Daily limit reached";
+    const SLOW: &str = "Slow down";
+    const PREMIUM: &str = "Premium feature";
+    const BUSY: &str = "TraderMatrix is busy";
+
+    fn tool_err(r: &Req, text: &str) -> Resp {
+        rpc_ok(r, json!({"isError": true, "content":[{"type":"text","text": text}]}))
+    }
+
+    fn tm_q(m: &Mock, clock: &Arc<FakeClock>, pool: Option<sqlx::SqlitePool>, per_min: u32, per_day: u32) -> Arc<TmState> {
+        Arc::new(TmState::for_test_with(m.url("/api/v1/mcp"), store_with(KEY), clock.clone(), pool, Budgets { per_min, per_day }))
+    }
+
+    /// Serves fixtures and stamps every tool call with the FAKE clock.
+    fn stamped(clock: Arc<FakeClock>, stamps: Arc<Mutex<Vec<i64>>>) -> impl Fn(&Req, usize) -> Option<Resp> + Send + Sync + 'static {
+        move |r, _| {
+            if r.rpc_method() == "tools/call" {
+                stamps.lock().unwrap().push(clock.now_ms());
+            }
+            ok_handler(r)
+        }
+    }
+
+    fn window_max(sent: &[i64]) -> usize {
+        sent.iter().map(|&t| sent.iter().filter(|&&s| s > t - 60_000 && s <= t).count()).max().unwrap_or(0)
+    }
+
+    fn sym(i: usize) -> String {
+        format!("{}{}", (b'A' + (i / 26) as u8) as char, (b'A' + (i % 26) as u8) as char)
+    }
+
+    // ---- Review Focus 1
+
+    #[tokio::test]
+    async fn a_burst_of_30_interactive_calls_never_sends_more_than_10_in_any_60s_window() {
+        let clock = Arc::new(FakeClock::new(t0()));
+        let stamps = Arc::new(Mutex::new(vec![]));
+        let m = Mock::start(stamped(clock.clone(), stamps.clone())).await;
+        let tm = tm_q(&m, &clock, None, 10, 200);
+        for burst in 0..2 {
+            let mut set = tokio::task::JoinSet::new();
+            for i in 0..30 {
+                let tm = tm.clone();
+                set.spawn(async move { tm.iv_rank(&sym(i)).await });
+            }
+            let (mut ok, mut throttled) = (0, 0);
+            while let Some(r) = set.join_next().await {
+                match r.unwrap() {
+                    Ok(_) => ok += 1,
+                    Err(RhError::TmPaused(t)) => {
+                        assert!(t.starts_with("TM throttled until "), "{t}");
+                        throttled += 1;
+                    }
+                    Err(e) => panic!("{e:?}"),
+                }
+            }
+            assert_eq!((ok, throttled), (10, 20), "burst {burst}");
+            assert_eq!(calls(&m).len(), 10 * (burst + 1));
+            // 301 s later: past the minute AND past the 300 s cache, so burst 2 really goes to the server again.
+            tm.advance_clock(Duration::from_secs(301));
+        }
+        let s = stamps.lock().unwrap().clone();
+        assert_eq!(s.len(), 20);
+        assert!(window_max(&s) <= 10, "{}", window_max(&s));
+        all_authed(&m);
+    }
+
+    #[tokio::test]
+    async fn a_short_wait_really_waits_on_the_clock_and_then_sends() {
+        let clock = Arc::new(FakeClock::new(t0()));
+        let stamps = Arc::new(Mutex::new(vec![]));
+        let m = Mock::start(stamped(clock.clone(), stamps.clone())).await;
+        let tm = tm_q(&m, &clock, None, 2, 200);
+        tm.iv_rank("AA").await.unwrap();
+        clock.advance(50_000);
+        tm.iv_rank("BB").await.unwrap();
+        // the window still holds both; the oldest leaves 10 s from now
+        tm.iv_rank("CC").await.unwrap();
+        let s = stamps.lock().unwrap().clone();
+        assert_eq!(s, [t0(), t0() + 50_000, t0() + 60_000]);
+    }
+
+    // ---- Review Focus 2
+
+    #[tokio::test]
+    async fn daily_limit_reached_stops_every_tm_call_until_the_day_rolls_over() {
+        let n = Arc::new(AtomicUsize::new(0));
+        let n2 = n.clone();
+        let m = Mock::start(move |r, _| match r.rpc_method().as_str() {
+            "tools/call" if n2.fetch_add(1, Ordering::SeqCst) == 0 => Some(tool_err(r, DAILY)),
+            _ => ok_handler(r),
+        })
+        .await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        let tm = tm_q(&m, &clock, None, 10, 200);
+        // the server's own words pass through on the call that hit the wall
+        let e = tm.iv_rank("AAPL").await.unwrap_err();
+        assert!(matches!(&e, RhError::Tool(t) if t == DAILY), "{e:?}");
+        let s = tm.quota_status().await;
+        assert_eq!((s.used, s.limit, s.paused), (200, 200, true));
+        assert_eq!(s.paused_until_ms, Some(quota::utc_ms(2026, 11, 12, 0, 0, 0)));
+        // nothing else reaches the server: reads, the watchlist read, a write, every priority
+        let before = m.count();
+        for r in [
+            tm.iv_rank("MSFT").await.map(|_| ()),
+            tm.expected_move("AAPL").await.map(|_| ()),
+            tm.snapshot("NVDA").await.map(|_| ()),
+            tm.apex_levels("TSLA", None).await.map(|_| ()),
+            tm.watchlists().await.map(|_| ()),
+            tm.watchlist_add_with("L", "AAPL", Priority::Background).await.map(|_| ()),
+            tm.iv_rank_with("AMD", Priority::Opportunistic).await.map(|_| ()),
+        ] {
+            match r {
+                Err(RhError::TmPaused(t)) => assert!(t.starts_with("TM paused until 2026-11-12T00:00:00Z"), "{t}"),
+                other => panic!("{other:?}"),
+            }
+        }
+        assert_eq!(m.count(), before, "zero requests while paused (not even a handshake)");
+        assert_eq!(calls(&m).len(), 1, "no retry loop");
+        // the cached value for a symbol read before the wall would still be served (nothing to fetch); a rollover reopens the gate
+        clock.set(quota::utc_ms(2026, 11, 12, 0, 0, 5));
+        tm.iv_rank("MSFT").await.unwrap();
+        assert_eq!(calls(&m).len(), 2);
+        let s = tm.quota_status().await;
+        assert_eq!((s.used, s.paused, s.day.as_str()), (1, false, "2026-11-12"));
+    }
+
+    #[tokio::test]
+    async fn a_smaller_limit_in_the_message_is_learned() {
+        let m = Mock::start(|r, _| match r.rpc_method().as_str() {
+            "tools/call" => Some(tool_err(r, "Daily limit reached (25 calls/day on the free plan)")),
+            _ => ok_handler(r),
+        })
+        .await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        let tm = tm_q(&m, &clock, None, 10, 200);
+        assert!(tm.iv_rank("AAPL").await.is_err());
+        let s = tm.quota_status().await;
+        assert_eq!((s.limit_seen, s.limit, s.used), (Some(25), 25, 25));
+        assert_eq!(s.per_day, 200, "the user's own setting is untouched");
+    }
+
+    #[tokio::test]
+    async fn slow_down_and_busy_back_off_without_a_retry_loop() {
+        let n = Arc::new(AtomicUsize::new(0));
+        let n2 = n.clone();
+        let m = Mock::start(move |r, _| match r.rpc_method().as_str() {
+            "tools/call" => match n2.fetch_add(1, Ordering::SeqCst) {
+                0 => Some(tool_err(r, SLOW)),
+                1 => Some(tool_err(r, BUSY)),
+                _ => ok_handler(r),
+            },
+            _ => ok_handler(r),
+        })
+        .await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        let tm = tm_q(&m, &clock, None, 10, 200);
+        assert!(matches!(tm.iv_rank("AA").await.unwrap_err(), RhError::Tool(t) if t == SLOW));
+        match tm.iv_rank("BB").await.unwrap_err() {
+            RhError::TmPaused(t) => assert!(t.starts_with("TM throttled until 2026-11-11T15:01:00Z"), "{t}"),
+            e => panic!("{e:?}"),
+        }
+        assert_eq!(calls(&m).len(), 1);
+        assert_eq!(tm.quota_status().await.throttled_until_ms, Some(t0() + 60_000));
+        // after the backoff: the busy reply (30 s backoff, an interactive call waits it out on the clock)
+        clock.advance(61_000);
+        assert!(matches!(tm.iv_rank("BB").await.unwrap_err(), RhError::Tool(t) if t == BUSY));
+        match tm.iv_rank("CC").await.unwrap_err() {
+            RhError::TmPaused(t) => assert!(t.starts_with("TM throttled until 2026-11-11T15:01:31Z"), "{t}"),
+            e => panic!("{e:?}"),
+        }
+        assert_eq!(calls(&m).len(), 2);
+        clock.advance(31_000);
+        tm.iv_rank("CC").await.unwrap();
+        assert_eq!(calls(&m).len(), 3);
+    }
+
+    #[tokio::test]
+    async fn premium_feature_is_a_plain_tier_message_and_never_pauses_anything() {
+        let n = Arc::new(AtomicUsize::new(0));
+        let n2 = n.clone();
+        let m = Mock::start(move |r, _| match r.rpc_method().as_str() {
+            "tools/call" if n2.fetch_add(1, Ordering::SeqCst) == 0 => Some(tool_err(r, PREMIUM)),
+            _ => ok_handler(r),
+        })
+        .await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        let tm = tm_q(&m, &clock, None, 10, 200);
+        assert!(matches!(tm.expected_move("AAPL").await.unwrap_err(), RhError::Tool(t) if t == PREMIUM));
+        tm.iv_rank("AAPL").await.unwrap();
+        let s = tm.quota_status().await;
+        assert!(!s.paused && s.throttled_until_ms.is_none());
+        assert_eq!(s.used, 2);
+    }
+
+    // ---- counting rules
+
+    #[tokio::test]
+    async fn only_requests_that_leave_the_machine_are_counted() {
+        let m = Mock::start(|r, _| ok_handler(r)).await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        let tm = tm_q(&m, &clock, None, 10, 200);
+        tm.iv_rank("AAPL").await.unwrap();
+        tm.iv_rank("AAPL").await.unwrap(); // cache hit
+        let _ = tokio::join!(tm.iv_rank("MSFT"), tm.iv_rank("MSFT"), tm.iv_rank("msft")); // one request
+        assert!(tm.iv_rank("not a symbol").await.is_err()); // refused locally
+        assert_eq!(tm.quota_status().await.used, 2);
+        assert_eq!(calls(&m).len(), 2);
+        // a missing key sends nothing and costs nothing
+        let m2 = Mock::start(|r, _| ok_handler(r)).await;
+        let s = MemoryStore::new();
+        let tm2 = TmState::for_test_with(m2.url("/api/v1/mcp"), Arc::new(s), clock.clone(), None, Budgets { per_min: 10, per_day: 200 });
+        assert_eq!(tm2.iv_rank("AAPL").await.unwrap_err(), RhError::TmKeyMissing);
+        assert_eq!((m2.count(), tm2.quota_status().await.used), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn background_and_opportunistic_calls_are_dropped_when_the_daily_budget_is_nearly_gone() {
+        let m = Mock::start(|r, _| ok_handler(r)).await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        let tm = tm_q(&m, &clock, None, 12, 10);
+        for i in 0..9 {
+            tm.iv_rank(&sym(i)).await.unwrap();
+        }
+        // 1 of 10 left = 10%: below 20%
+        for r in [tm.watchlists_with(Priority::Background).await.map(|_| ()), tm.iv_rank_with("ZZ", Priority::Opportunistic).await.map(|_| ())] {
+            match r {
+                Err(RhError::TmPaused(t)) => assert!(t.contains("daily") || t.contains("budget"), "{t}"),
+                other => panic!("{other:?}"),
+            }
+        }
+        assert_eq!(calls(&m).len(), 9);
+        tm.iv_rank("ZZ").await.unwrap(); // the symbol the user is looking at still gets the last call
+        assert_eq!(calls(&m).len(), 10);
+    }
+
+    // ---- Review Focus 4 (backend half): the calls a symbol switch can cost
+
+    #[tokio::test]
+    async fn five_symbol_switches_never_exceed_the_per_minute_budget() {
+        let clock = Arc::new(FakeClock::new(t0()));
+        let stamps = Arc::new(Mutex::new(vec![]));
+        let m = Mock::start(stamped(clock.clone(), stamps.clone())).await;
+        let tm = tm_q(&m, &clock, None, 10, 200);
+        // worst case: every switch loads all four legs of the new symbol, nothing is prefetched
+        for s in ["AAPL", "MSFT", "NVDA", "TSLA", "AMD"] {
+            let (a, b, c, d) = tokio::join!(tm.snapshot(s), tm.apex_levels(s, None), tm.expected_move(s), tm.iv_rank(s));
+            let _ = (a, b, c, d);
+            clock.advance(2_000);
+        }
+        let s = stamps.lock().unwrap().clone();
+        assert_eq!(s.len(), 10, "the wall stops the rest: {s:?}");
+        assert!(window_max(&s) <= 10);
+        // the final symbol, asked for again after the minute, costs at most its four legs
+        clock.advance(61_000);
+        let before = calls(&m).len();
+        let (a, b, c, d) = tokio::join!(tm.snapshot("AMD"), tm.apex_levels("AMD", None), tm.expected_move("AMD"), tm.iv_rank("AMD"));
+        assert!(a.is_ok() && b.is_ok() && c.is_ok() && d.is_ok());
+        assert!(calls(&m).len() - before <= 4);
+    }
+
+    // ---- persistence
+
+    #[tokio::test]
+    async fn the_daily_counter_survives_a_restart_and_so_does_the_pause() {
+        let pool = db::open_memory().await.unwrap();
+        let m = Mock::start(|r, _| ok_handler(r)).await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        {
+            let tm = tm_q(&m, &clock, Some(pool.clone()), 12, 200);
+            for s in ["AAPL", "MSFT", "NVDA"] {
+                tm.iv_rank(s).await.unwrap();
+            }
+            assert_eq!(quota::load_day(&pool, "2026-11-11").await.unwrap().map(|r| r.used), Some(3));
+        }
+        let tm = tm_q(&m, &clock, Some(pool.clone()), 12, 200);
+        assert_eq!(tm.quota_status().await.used, 3, "a new process starts from the stored count");
+        tm.iv_rank("TSLA").await.unwrap();
+        assert_eq!(quota::load_day(&pool, "2026-11-11").await.unwrap().map(|r| r.used), Some(4));
+        // a day that already hit the wall stays paused across a restart: zero requests
+        let m2 = Mock::start(|r, _| match r.rpc_method().as_str() {
+            "tools/call" => Some(tool_err(r, DAILY)),
+            _ => ok_handler(r),
+        })
+        .await;
+        let tm = tm_q(&m2, &clock, Some(pool.clone()), 12, 200);
+        assert!(tm.iv_rank("AMD").await.is_err());
+        let row = quota::load_day(&pool, "2026-11-11").await.unwrap().unwrap();
+        assert_eq!((row.used, row.paused), (200, true));
+        let m3 = Mock::start(|r, _| ok_handler(r)).await;
+        let tm = tm_q(&m3, &clock, Some(pool.clone()), 12, 200);
+        assert!(matches!(tm.iv_rank("QQQ").await.unwrap_err(), RhError::TmPaused(_)));
+        assert_eq!(m3.count(), 0);
+        // tomorrow it is open again
+        clock.set(quota::utc_ms(2026, 11, 12, 0, 1, 0));
+        tm.iv_rank("QQQ").await.unwrap();
+        assert_eq!(quota::load_day(&pool, "2026-11-12").await.unwrap().map(|r| r.used), Some(1));
+        // yesterday's row is kept as history
+        assert!(quota::load_day(&pool, "2026-11-11").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn the_budgets_are_validated_saved_and_applied_at_once() {
+        let pool = db::open_memory().await.unwrap();
+        let m = Mock::start(|r, _| ok_handler(r)).await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        let tm = tm_q(&m, &clock, Some(pool.clone()), 10, 200);
+        for (a, b) in [(0, 200), (13, 200), (10, 0), (10, 10_001)] {
+            assert!(matches!(tm.quota_set(a, b).await.unwrap_err(), RhError::Invalid(_)), "{a} {b}");
+        }
+        let s = tm.quota_set(2, 80).await.unwrap();
+        assert_eq!((s.per_min, s.per_day, s.limit), (2, 80, 80));
+        assert_eq!(quota::load_budgets(&pool).await, Budgets { per_min: 2, per_day: 80 });
+        tm.iv_rank("AA").await.unwrap();
+        tm.iv_rank("BB").await.unwrap();
+        assert!(matches!(tm.iv_rank("CC").await.unwrap_err(), RhError::TmPaused(_)));
+        assert_eq!(calls(&m).len(), 2);
+        // a fresh process reads the saved budgets, not the constructor's
+        let tm2 = tm_q(&m, &clock, Some(pool.clone()), 10, 200);
+        let s = tm2.quota_status().await;
+        assert_eq!((s.per_min, s.per_day, s.used), (2, 80, 2));
+    }
+
+    #[tokio::test]
+    async fn the_key_is_in_no_quota_status_row_or_error() {
+        let pool = db::open_memory().await.unwrap();
+        let m = Mock::start(|r, _| match r.rpc_method().as_str() {
+            "tools/call" => Some(tool_err(r, "Daily limit reached for td_live_TESTKEY")),
+            _ => ok_handler(r),
+        })
+        .await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        let tm = tm_q(&m, &clock, Some(pool.clone()), 10, 200);
+        let e1 = tm.iv_rank("AAPL").await.unwrap_err().to_string();
+        let e2 = tm.iv_rank("MSFT").await.unwrap_err().to_string();
+        let st = serde_json::to_string(&tm.quota_status().await).unwrap();
+        let rows: Vec<String> = sqlx::query_scalar("SELECT day || ',' || used || ',' || COALESCE(limit_seen,'') || ',' || paused FROM tm_quota").fetch_all(&pool).await.unwrap();
+        let settings: Vec<String> = sqlx::query_scalar("SELECT key || value FROM settings").fetch_all(&pool).await.unwrap();
+        for t in [e1, e2, st, rows.join("|"), settings.join("|")] {
+            assert!(!t.contains("TESTKEY") && !t.contains("td_live_"), "{t}");
+        }
+    }
+
+    // ---- preview lists
+
+    #[tokio::test]
+    async fn a_preview_watchlist_response_is_marked_truncated_and_the_quota_says_preview() {
+        let preview = r#"{"preview": true, "lists":[{"id":1,"name":"Big","tickerCount":5,"tickers":[{"ticker":"AAAA"},{"ticker":"BBBB"},{"ticker":"CCCC"}]}]}"#;
+        let m = Mock::start(move |r, _| match r.rpc_method().as_str() {
+            "tools/call" => Some(tool_text(r, preview)),
+            _ => ok_handler(r),
+        })
+        .await;
+        let clock = Arc::new(FakeClock::new(t0()));
+        let tm = tm_q(&m, &clock, None, 10, 200);
+        assert!(!tm.quota_status().await.preview);
+        let w = tm.watchlists().await.unwrap();
+        assert!(w.truncated, "{w:?}");
+        assert!(tm.quota_status().await.preview);
+        // a normal response is not truncated
+        let m2 = Mock::start(wl_mock_handler(violations())).await;
+        let tm2 = tm_q(&m2, &clock, None, 10, 200);
+        let w = tm2.watchlists().await.unwrap();
+        assert!(!w.truncated);
+        assert!(!tm2.quota_status().await.preview);
+    }
+
+    #[test]
+    fn truncation_is_detected_from_counts_or_flags_alone() {
+        use crate::tm::types::parse_watchlists;
+        let cut = parse_watchlists(&json!({"lists":[{"id":1,"name":"A","tickerCount":7,"tickers":[{"ticker":"AAAA"}]}]})).unwrap();
+        assert!(cut.truncated, "count above the rows we got");
+        let flag = parse_watchlists(&json!({"lists":[{"id":1,"name":"A","tickerCount":1,"tickers":[{"ticker":"AAAA"}],"truncated":true}]})).unwrap();
+        assert!(flag.truncated);
+        let more = parse_watchlists(&json!({"lists":[{"id":1,"name":"A","tickerCount":1,"tickers":[{"ticker":"AAAA"}]}],"totalLists":4})).unwrap();
+        assert!(more.truncated, "fewer lists than the server says exist");
+        let ok = parse_watchlists(&json!({"lists":[{"id":1,"name":"A","tickerCount":1,"tickers":[{"ticker":"AAAA"}]}],"preview":false})).unwrap();
+        assert!(!ok.truncated);
+    }
+
+    #[test]
+    fn priority_parses_only_its_three_names() {
+        assert_eq!(Priority::parse(None).unwrap(), Priority::Interactive);
+        assert_eq!(Priority::parse(Some("interactive")).unwrap(), Priority::Interactive);
+        assert_eq!(Priority::parse(Some("background")).unwrap(), Priority::Background);
+        assert_eq!(Priority::parse(Some("opportunistic")).unwrap(), Priority::Opportunistic);
+        assert!(Priority::parse(Some("urgent")).is_err());
+        assert!(Priority::parse(Some("")).is_err());
+    }
+
+    #[test]
+    fn day_row_type_is_plain_data() {
+        let r = DayRow { day: "2026-11-11".into(), used: 1, limit_seen: None, paused: false };
+        assert_eq!(r.clone(), r);
+    }
 }

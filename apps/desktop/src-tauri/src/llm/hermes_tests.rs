@@ -25,7 +25,7 @@ fn data(v: serde_json::Value) -> String {
     format!("data: {v}\n\n")
 }
 fn params(q: &str) -> StreamParams {
-    StreamParams { model: String::new(), digest: DIGEST.into(), question: q.into(), history: vec![], mode: "beginner".into() }
+    StreamParams { model: String::new(), digest: DIGEST.into(), question: q.into(), history: vec![], mode: "beginner".into(), lenses: vec![] }
 }
 fn collector() -> (Emit, Arc<Mutex<Vec<ChatEvent>>>) {
     let log: Arc<Mutex<Vec<ChatEvent>>> = Arc::new(Mutex::new(vec![]));

@@ -7,12 +7,15 @@
  *   &fail=1                   every TM add fails with a tool error (watch the 3-in-a-row stop)
  *   &cap=1                    TM allows only 4 tickers per list (watch the capacity skip, and the full-list refusal)
  *   &many=1                   "Mine" holds 120 extra symbols (Robinhood chunks of 50, TM progress and Cancel)
+ *   &quota=near|out|preview|slow  the TM call budget (see tm-dev.html): out pauses every TM call, preview cuts the lists to 3 and the sync refuses to compare
+ *                              (the fake stops at the per-minute wall; the real core makes background calls wait their turn)
  *   &delay=300                ms each fake TM call takes (default 300, so progress and Cancel are visible)
  */
 import '../styles/app.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { fake, fakeRh, fakeTm, isTauri, TM_KEY_SLOT, type RhAccount, type RhWatchlistItem } from '../lib/api'
+import { applyQuotaParam } from '../lib/tmFake'
 import { useRhStore } from '../stores/rh'
 import { TmKeyPanel } from './TmKeyPanel'
 import { WatchlistPane } from './WatchlistPane'
@@ -28,6 +31,7 @@ if (!isTauri()) {
   if (q.get('fail') === '1') fakeTm.failAdds = 'tool error: synthetic TraderMatrix failure (dev page)'
   if (q.get('cap') === '1') fakeTm.wl.tickers_per_list = 4
   fakeTm.delayMs = Number(q.get('delay') ?? 300) || 0
+  applyQuotaParam(q.get('quota'), fakeTm)
 
   const many = q.get('many') === '1' ? Array.from({ length: 120 }, (_, i) => `Q${String.fromCharCode(65 + Math.floor(i / 26))}${String.fromCharCode(65 + (i % 26))}Z`) : []
   const account: RhAccount = {

@@ -262,6 +262,9 @@ describe('explain-only guard', () => {
     'workspace/AskAboutMenu.tsx',
     'lib/redact.ts',
     'lib/explainStates.ts',
+    // M20b
+    'lib/explainLenses.ts',
+    'workspace/ExplainLenses.tsx',
   ]
   it('the chat files never mention order, ticket or place/review/cancel tooling', () => {
     for (const f of files) {

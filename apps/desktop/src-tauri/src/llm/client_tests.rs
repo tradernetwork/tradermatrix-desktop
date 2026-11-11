@@ -480,9 +480,10 @@ async fn b4_long_digests_are_accepted_only_with_a_bars_line() {
 
 #[test]
 fn b4_the_prompt_knows_the_focus_lines_and_the_version_moved() {
-    assert_eq!(PROMPT_VERSION, "m16b-1");
-    for key in ["CANDLE", "LEVEL", "CONTRACT", "HELD", "TRADE", "BARS"] {
+    assert_eq!(PROMPT_VERSION, "m20b-1");
+    for key in ["CANDLE", "LEVEL", "CONTRACT", "HELD", "TRADE", "BARS", "RSTATS", "R-multiple", "expectancy", "SQN"] {
         assert!(SYSTEM_PROMPT.contains(key), "{key}");
     }
     assert!(SYSTEM_PROMPT.contains("Describe, never prescribe"), "the rules stay");
+    assert!(SYSTEM_PROMPT.to_lowercase().contains("never say how much to risk"), "R is explained, never prescribed");
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import lockup from '../assets/brand/lockup-on-dark-800.png'
-import { APP_VERSION, NOT_AFFILIATED, PRODUCT_NAME } from '../lib/brand'
+import { APP_VERSION, NOT_AFFILIATED, PRODUCT_NAME, RH_SCOPE_NOTE } from '../lib/brand'
 import { useUiStore } from '../stores/ui'
 
 /** About: name, version, license pointers, the not-affiliated line, and the background-art switch. Opens from the toolbar. */
@@ -27,6 +27,7 @@ export function AboutDialog() {
               {PRODUCT_NAME} <span className="muted small">v{APP_VERSION}</span>
             </h2>
             <p>{NOT_AFFILIATED}</p>
+            <p className="small">{RH_SCOPE_NOTE}</p>
             <p className="small">
               Code: MIT (LICENSE). TraderMatrix name, marks and artwork under apps/desktop/src/assets/brand/ are (c) TraderMatrix, all rights reserved, and are not
               covered by the MIT license (LICENSE-BRAND.txt, NOTICE). Third-party software and fonts: THIRD_PARTY_LICENSES.md and NOTICE in the source repository.

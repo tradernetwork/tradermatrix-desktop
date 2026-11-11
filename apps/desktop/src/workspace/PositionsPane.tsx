@@ -13,6 +13,7 @@ import { fillTicket } from '../stores/ticketIntent'
 import { useAutoRefresh } from './useAutoRefresh'
 import { useMask } from './useMask'
 import { EmptyState } from './EmptyState'
+import { HeatPanel } from './HeatPanel'
 
 /** Short-option underlyings looked up for the strike-check dots (TM + earnings calls are cached; this caps the fan-out). */
 const SC_MAX_UNDERLYINGS = 8
@@ -37,7 +38,7 @@ export function PositionsPane() {
   useEffect(() => {
     if (state !== 'connected') return
     for (const u of shortUnders) {
-      void useTmStore.getState().loadSymbol(u, ['apex', 'move', 'iv'])
+      void useTmStore.getState().loadSymbol(u, ['apex', 'move', 'iv'], false, 'background')
       void useEarningsStore.getState().load(u)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,6 +255,7 @@ export function PositionsPane() {
           )}
         </>
       )}
+      <HeatPanel />
     </div>
   )
 }

@@ -11,6 +11,8 @@ export function rollupInputs(env: Record<string, string | undefined>): Record<st
     input.tmDev = 'tm-dev.html'
     input.syncDev = 'sync-dev.html'
     input.chatDev = 'chat-dev.html'
+    input.alertsDev = 'alerts-dev.html'
+    input.riskDev = 'risk-dev.html'
   }
   return input
 }

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { degradedText, isPaused, pausedMessage } from '../lib/tmQuota'
 import { fmtNum } from '../lib/format'
 import {
   fmtBand,
@@ -37,12 +38,14 @@ export function TmInsightPane() {
   const epoch = useTmStore((s) => s.epoch)
   const entry = useTmStore((s) => s.bySymbol[symbol])
   const keyPresent = status?.key_present
+  const quota = useTmStore((s) => s.quota)
+  const paused = isPaused(quota, Date.now())
   const accounts = useRhStore((s) => s.accounts)
   const account = useRhStore((s) => s.account)
   const fillReason = fillDisabledReason(useRhStore((s) => s.status?.connected === true), accounts, account)
 
   useEffect(() => {
-    void useTmStore.getState().loadSymbol(symbol)
+    useTmStore.getState().scheduleSymbol('insight', symbol)
   }, [symbol, epoch, keyPresent])
 
   const blocked = status && !status.key_present
@@ -75,6 +78,16 @@ export function TmInsightPane() {
         </button>
       </div>
 
+      {paused && quota && (
+        <div className="tm-degraded" role="status" data-testid="tm-paused">
+          {degradedText(pausedMessage(quota))}. Data already on screen stays; nothing new is requested until then.
+        </div>
+      )}
+      {quota?.preview && (
+        <div className="tm-degraded" role="status" data-testid="tm-preview">
+          preview: upgrade for full lists
+        </div>
+      )}
       {blocked ? (
         <div className="tm-err" role="alert">
           {tmErrorText(status.last_error ?? 'TraderMatrix key not set')}

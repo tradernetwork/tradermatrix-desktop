@@ -140,6 +140,8 @@ pub struct McpClient {
     rate_backoff: Duration,
     retry_delay: Duration,
     init_timeout: Duration,
+    /// Resend a read once after RATE_LIMITED (default). TraderMatrix turns this off: a hidden resend would bypass its call budget.
+    rate_retry: bool,
 }
 
 impl McpClient {
@@ -161,7 +163,14 @@ impl McpClient {
             rate_backoff: Duration::from_secs(5),
             retry_delay: Duration::from_millis(250),
             init_timeout: INIT_TIMEOUT,
+            rate_retry: true,
         }
+    }
+
+    /// A rate-limited read is reported, never silently resent (the caller owns the call budget).
+    pub fn without_rate_retry(mut self) -> Self {
+        self.rate_retry = false;
+        self
     }
 
     /// Test hook: shorten the `initialize` timeout.
@@ -242,7 +251,7 @@ impl McpClient {
         let mut rate_retried = false;
         loop {
             match self.call_tool_once(name, &args, read).await {
-                Err(RhError::RateLimited) if read && !rate_retried => {
+                Err(RhError::RateLimited) if read && !rate_retried && self.rate_retry => {
                     rate_retried = true;
                     tokio::time::sleep(self.rate_backoff).await;
                 }

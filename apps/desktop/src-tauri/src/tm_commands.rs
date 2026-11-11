@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use tauri::State;
 
+use crate::tm::quota::{Priority, QuotaStatus};
 use crate::tm::types::{ApexLevels, ExpectedMove, IvRank, Snapshot, TmAddOutcome, TmWatchlistMeta, TmWatchlists};
 use crate::tm::{TmState, TmStatus};
 
@@ -19,39 +20,51 @@ pub async fn tm_status(tm: Tm<'_>) -> Result<TmStatus, String> {
 }
 
 #[tauri::command]
-pub async fn tm_apex_levels(tm: Tm<'_>, symbol: String, expiration: Option<String>) -> Result<ApexLevels, String> {
-    Ok(tm.apex_levels(&symbol, expiration.as_deref()).await?)
+pub async fn tm_apex_levels(tm: Tm<'_>, symbol: String, expiration: Option<String>, priority: Option<String>) -> Result<ApexLevels, String> {
+    Ok(tm.apex_levels_with(&symbol, expiration.as_deref(), Priority::parse(priority.as_deref())?).await?)
 }
 
 #[tauri::command]
-pub async fn tm_expected_move(tm: Tm<'_>, symbol: String) -> Result<ExpectedMove, String> {
-    Ok(tm.expected_move(&symbol).await?)
+pub async fn tm_expected_move(tm: Tm<'_>, symbol: String, priority: Option<String>) -> Result<ExpectedMove, String> {
+    Ok(tm.expected_move_with(&symbol, Priority::parse(priority.as_deref())?).await?)
 }
 
 #[tauri::command]
-pub async fn tm_iv_rank(tm: Tm<'_>, symbol: String) -> Result<IvRank, String> {
-    Ok(tm.iv_rank(&symbol).await?)
+pub async fn tm_iv_rank(tm: Tm<'_>, symbol: String, priority: Option<String>) -> Result<IvRank, String> {
+    Ok(tm.iv_rank_with(&symbol, Priority::parse(priority.as_deref())?).await?)
 }
 
 #[tauri::command]
-pub async fn tm_snapshot(tm: Tm<'_>, symbol: String) -> Result<Snapshot, String> {
-    Ok(tm.snapshot(&symbol).await?)
+pub async fn tm_snapshot(tm: Tm<'_>, symbol: String, priority: Option<String>) -> Result<Snapshot, String> {
+    Ok(tm.snapshot_with(&symbol, Priority::parse(priority.as_deref())?).await?)
 }
 
 /// M8: the account's lists, tickers only (notes never leave Rust).
 #[tauri::command]
-pub async fn tm_watchlists(tm: Tm<'_>) -> Result<TmWatchlists, String> {
-    Ok(tm.watchlists().await?)
+pub async fn tm_watchlists(tm: Tm<'_>, priority: Option<String>) -> Result<TmWatchlists, String> {
+    Ok(tm.watchlists_with(Priority::parse(priority.as_deref())?).await?)
 }
 
 /// M8: adds one symbol to a list (name or id). Non-money write; adds only.
 #[tauri::command]
-pub async fn tm_watchlist_add(tm: Tm<'_>, list: String, ticker: String) -> Result<TmAddOutcome, String> {
-    Ok(tm.watchlist_add(&list, &ticker).await?)
+pub async fn tm_watchlist_add(tm: Tm<'_>, list: String, ticker: String, priority: Option<String>) -> Result<TmAddOutcome, String> {
+    Ok(tm.watchlist_add_with(&list, &ticker, Priority::parse(priority.as_deref())?).await?)
 }
 
 /// M8: creates an empty list with this name.
 #[tauri::command]
-pub async fn tm_watchlist_create(tm: Tm<'_>, name: String) -> Result<TmWatchlistMeta, String> {
-    Ok(tm.watchlist_create(&name).await?)
+pub async fn tm_watchlist_create(tm: Tm<'_>, name: String, priority: Option<String>) -> Result<TmWatchlistMeta, String> {
+    Ok(tm.watchlist_create_with(&name, Priority::parse(priority.as_deref())?).await?)
+}
+
+/// M20a: today's TraderMatrix call count, the effective limit, the two budgets and any pause or backoff. Local only: never calls TraderMatrix.
+#[tauri::command]
+pub async fn tm_quota_status(tm: Tm<'_>) -> Result<QuotaStatus, String> {
+    Ok(tm.quota_status().await)
+}
+
+/// M20a: saves the two budgets (calls per minute, 1 to 12; calls per day, 1 to 10000). Returns the new status.
+#[tauri::command]
+pub async fn tm_quota_set(tm: Tm<'_>, per_min: u32, per_day: u32) -> Result<QuotaStatus, String> {
+    Ok(tm.quota_set(per_min, per_day).await?)
 }

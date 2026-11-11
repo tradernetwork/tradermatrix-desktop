@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { getActiveDock } from './activeDock'
+import { useAlertMenu } from '../stores/alertMenu'
 import { confirmAskAbout, dismissAskAbout, useFocusStore } from '../stores/explainFocus'
 
 /**
@@ -9,9 +10,14 @@ import { confirmAskAbout, dismissAskAbout, useFocusStore } from '../stores/expla
  */
 export function AskAboutMenu() {
   const menu = useFocusStore((s) => s.menu)
+  const alertMenu = useAlertMenu((s) => s.menu)
+  const open = menu ?? alertMenu
   useEffect(() => {
-    if (!menu) return
-    const close = () => dismissAskAbout()
+    if (!open) return
+    const close = () => {
+      dismissAskAbout()
+      useAlertMenu.getState().setMenu(null)
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close()
     }
@@ -30,16 +36,32 @@ export function AskAboutMenu() {
       window.removeEventListener('scroll', close, true)
       window.removeEventListener('resize', close)
     }
-  }, [menu])
-  if (!menu) return null
-  const left = Math.max(4, Math.min(menu.x, window.innerWidth - 220))
-  const top = Math.max(4, Math.min(menu.y, window.innerHeight - 60))
+  }, [open])
+  if (!open) return null
+  const left = Math.max(4, Math.min(open.x, window.innerWidth - 240))
+  const top = Math.max(4, Math.min(open.y, window.innerHeight - 40 - 30 * ((alertMenu?.items.length ?? 0) + (menu ? 1 : 0))))
   return (
     <div className="ask-menu" role="menu" style={{ left, top }} onContextMenu={(e) => e.preventDefault()}>
+      {alertMenu?.items.map((it) => (
+        <button
+          key={it.label}
+          type="button"
+          role="menuitem"
+          title={it.title}
+          onClick={() => {
+            useAlertMenu.getState().setMenu(null)
+            dismissAskAbout()
+            it.run()
+          }}
+        >
+          {it.label}
+        </button>
+      ))}
+      {menu && (
       <button
         type="button"
         role="menuitem"
-        autoFocus
+        autoFocus={!alertMenu}
         title="Fills the question box with a question about this and adds its numbers. Nothing is sent until you press Ask."
         onClick={() => {
           confirmAskAbout()
@@ -52,6 +74,7 @@ export function AskAboutMenu() {
       >
         Ask Arya about this: {menu.focus.label}
       </button>
+      )}
     </div>
   )
 }

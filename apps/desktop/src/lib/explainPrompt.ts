@@ -78,7 +78,7 @@ export const BUDGET_SESSION_KEY = 'chat.budget.session_tokens'
 export const BUDGET_MONTH_KEY = 'chat.budget.month_usd'
 
 /** Mirrors `PROMPT_VERSION` in src-tauri/src/llm/client.rs (a test pins both). Shown in "What I sent". */
-export const PROMPT_VERSION = 'm16b-1'
+export const PROMPT_VERSION = 'm20b-1'
 /** Rough token estimate: characters / 4, rounded up. Used for the "What I sent" drawer (the fixed instructions are not counted). */
 export const estimateTokens = (chars: number): number => Math.ceil(Math.max(0, chars) / 4)
 

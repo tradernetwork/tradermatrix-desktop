@@ -45,7 +45,7 @@ fn llm(m: &Mock, st: Arc<dyn SecretStore>) -> LlmState {
     LlmState::for_test(st, Duration::from_secs(5)).with_base_override(m.url("/api/v1"))
 }
 fn params(q: &str) -> StreamParams {
-    StreamParams { model: String::new(), digest: DIGEST.into(), question: q.into(), history: vec![], mode: "beginner".into() }
+    StreamParams { model: String::new(), digest: DIGEST.into(), question: q.into(), history: vec![], mode: "beginner".into(), lenses: vec![] }
 }
 fn quiet() -> (Emit, Arc<Mutex<Vec<ChatEvent>>>) {
     let log: Arc<Mutex<Vec<ChatEvent>>> = Arc::new(Mutex::new(vec![]));

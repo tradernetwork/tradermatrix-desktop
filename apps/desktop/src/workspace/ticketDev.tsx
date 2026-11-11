@@ -13,6 +13,9 @@
  *   &opt=1                      M10: seeds option positions (long call, short put, one with no quote) in the Positions pane
  *   &strike=1                   M13: seeds the strike check: three short AAPL puts in Positions (protected, exposed, event risk), fake TM apex / expected move
  *                               and an earnings date; the option ticket's Sell + Open shows the same panel. Info only, never blocks Review
+ *   &risk=1|noequity           M18: opens the size helper with a stop typed (stock tab and option tab), and seeds two PLACED risk drafts (AAPL 40 shares $400,
+ *                               TSLA 3 shares $150) so the Positions pane shows heat with MSFT and F listed as unknown risk. noequity: the portfolio has no
+ *                               value, so the helper says "equity unavailable". Informational only: Review and Place behave exactly as without it
  * M10: the page also shows the Positions pane (seeded equity positions: long with held shares, short, fractional) and a
  * watchlist, so Close / Mkt / Add, row clicks, B / S and Cancel & edit can be tried. Every fill only sets ticket fields.
  */
@@ -20,8 +23,9 @@ import '../styles/app.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { normalizeSymbol } from '../chart/useChartData'
-import { fake, fakePriceAt, fakeRh, fakeTm, isTauri, TM_KEY_SLOT, type ApexLevels, type ExpectedMove, type RhAccount, type RhOptionChain, type RhOptionPosition, type RhOptionRow } from '../lib/api'
+import { fake, fakePriceAt, fakeRh, fakeRisk, fakeTm, isTauri, TM_KEY_SLOT, type ApexLevels, type ExpectedMove, type RhAccount, type RhOptionChain, type RhOptionPosition, type RhOptionRow } from '../lib/api'
 import { useRhStore } from '../stores/rh'
+import { useRiskStore } from '../stores/risk'
 import { disconnectSession } from '../stores/session'
 import { ErrorBoundary } from './ErrorBoundary'
 import { OrdersPane } from './OrdersPane'
@@ -189,6 +193,25 @@ if (!isTauri()) {
   }
   wobble()
   setInterval(wobble, 2000)
+  const risk = q.get('risk')
+  if (risk === '1' || risk === 'noequity') {
+    if (risk === 'noequity') fakeRh.portfolios = { DEMO00005678: { total_value: null, equity_value: null, options_value: null, cash: null, buying_power: null, currency: 'USD' } }
+    const seedDraft = (id: string, sym: string, qty: number, planned: number, entry: number, stop: number) => {
+      fakeRisk.draftPut({
+        review_id: id,
+        fields: { side: 'buy', account_masked: '••••5678', symbol: sym, instrument: 'equity', risk_basis: 'equity_stop', planned_risk_usd: planned, qty, entry_price: entry, stop_price: stop },
+      })
+      fakeRisk.draftPut({ review_id: id, order_id: `dev-${sym}` })
+    }
+    seedDraft('aaaaaaaa-0000-4000-8000-000000000001', 'AAPL', 40, 400, 100, 90)
+    seedDraft('aaaaaaaa-0000-4000-8000-000000000002', 'TSLA', 3, 150, 250, 200)
+    // the helper clears its numbers when the symbol changes, so type the stop after it has mounted
+    setTimeout(() => {
+      document.querySelectorAll('details.risk-helper').forEach((d) => ((d as HTMLDetailsElement).open = true))
+      const p = fakePriceAt(symbol, Date.now())
+      useRiskStore.getState().setHelper({ stop: String(Math.round(p * 0.97 * 100) / 100), touched: true })
+    }, 900)
+  }
   useRhStore.setState({ chartSymbol: symbol })
   void useRhStore.getState().connect()
 }

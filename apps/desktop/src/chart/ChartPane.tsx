@@ -9,6 +9,13 @@ import { useChartContext } from '../stores/chartContext'
 import { askAbout } from '../stores/explainFocus'
 import { fibDigest, summarizeBars } from '../lib/explainDigest'
 import { useRhStore } from '../stores/rh'
+import { refFromLevel } from '../alerts/levelRefs'
+import { useAlertsStore } from '../stores/alerts'
+import { setDeskLevels } from '../stores/alertLevels'
+import { useAlertMenu, type AlertMenuItem } from '../stores/alertMenu'
+import { attachAlerts, detachAlerts, registerAlertIndicator } from './alertIndicator'
+import { alertItemsFor, dirForPrice, hitAlert } from './alertChartHooks'
+import { CHIP_OFFSET_PX, type AlertLineItem } from './alertLines'
 import { useDeskStatsStore } from '../stores/deskStats'
 import { DEFAULT_TIMEFRAME, isIntraday, TIMEFRAMES, timeframeById, timezoneFor, type Candle, type Timeframe, type TimeframeId } from './bars'
 import { backfillFromStore, SRC_EQUITY, SRC_OPTION, storeCandlesQuiet, storeStatusText } from './candleStore'
@@ -115,6 +122,15 @@ export function ChartPane({ symbol: symbolProp, onSymbolChange, option = null, o
   const positions = useRhStore((s) => s.positions)
   const atrRes = useMemo(() => resolveAtr(desk.atr, symbol, positions), [desk.atr, symbol, positions])
 
+  const alertsAll = useAlertsStore((s) => s.alerts)
+  const sessSnoozed = useAlertsStore((s) => s.sessionSnoozed)
+  const lastEvent = useAlertsStore((s) => s.events[0])
+  const [flashIds, setFlashIds] = useState<ReadonlySet<number>>(new Set())
+  const [drag, setDrag] = useState<{ id: number; price: number } | null>(null)
+  const [confirmMove, setConfirmMove] = useState<{ id: number; price: number } | null>(null)
+  const itemsRef = useRef<AlertLineItem[]>([])
+  const ptrRef = useRef<{ over: boolean; y: number }>({ over: false, y: 0 })
+
   const tm = useTmStore((s) => s.settings)
   const tmSettingsLoaded = useTmStore((s) => s.settingsLoaded)
   const tmEpoch = useTmStore((s) => s.epoch)
@@ -144,6 +160,7 @@ export function ChartPane({ symbol: symbolProp, onSymbolChange, option = null, o
     registerTmIndicator(klc)
     registerDeskIndicator(klc)
     registerVolumeIndicators(klc)
+    registerAlertIndicator(klc)
     const chart = klc.init(el, { styles: chartStyles(), locale: 'en-US', timezone: 'America/New_York' })
     if (!chart) return
     chart.setDataLoader(feedRef.current.loader)
@@ -162,6 +179,7 @@ export function ChartPane({ symbol: symbolProp, onSymbolChange, option = null, o
       volApplied.current = null
       clearTmRegistry()
       detachDesk(null, myDeskId)
+      detachAlerts(null)
       useDeskStatsStore.getState().clear()
       chartRef.current = null
       klc.dispose(el)
@@ -253,12 +271,12 @@ export function ChartPane({ symbol: symbolProp, onSymbolChange, option = null, o
     if (!useTmStore.getState().settingsLoaded) void useTmStore.getState().loadSettings()
   }, [])
 
-  // TraderMatrix overlay data: only fetched while a toggle is on; the store caches (apex 60 s, move 5 min) so this is cheap
+  // TraderMatrix overlay data: only fetched while a toggle is on (and the window is visible); the store caches 5 min and waits for a new symbol to settle
   useEffect(() => {
     if (!tmSettingsLoaded || optId) return
     const legs = [...(tm.apex || tm.flip ? (['apex'] as const) : []), ...(tm.move ? (['move'] as const) : [])]
     if (legs.length === 0) return
-    void useTmStore.getState().loadSymbol(symbol, legs)
+    useTmStore.getState().scheduleSymbol('chart', symbol, legs)
     const id = setInterval(() => {
       if (!document.hidden) void useTmStore.getState().loadSymbol(symbol, legs)
     }, 60_000)
@@ -450,6 +468,112 @@ export function ChartPane({ symbol: symbolProp, onSymbolChange, option = null, o
     }
   }, [symbol, tfId, optId])
 
+  // alert lines (M17): price alerts of this symbol, equity charts only; the indicator has no figures so the y-axis never stretches
+  useEffect(() => {
+    if (!lastEvent || lastEvent.missed || Date.now() - lastEvent.fired_at > 5000) return
+    setFlashIds(new Set([lastEvent.alert_id]))
+    const t = setTimeout(() => setFlashIds(new Set()), 3000)
+    return () => clearTimeout(t)
+  }, [lastEvent])
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const ready = !optId && phase === 'ready' && loadedSymbol === symbol && chart.getDataList().length > 0
+    const base = ready ? alertItemsFor(alertsAll, symbol, Date.now(), new Set(sessSnoozed), flashIds) : []
+    itemsRef.current = base
+    const items = drag ? base.map((i) => (i.id === drag.id ? { ...i, price: drag.price } : i)) : base
+    if (items.length === 0) detachAlerts(chart)
+    else attachAlerts(chart, items)
+  }, [alertsAll, sessSnoozed, flashIds, drag, symbol, phase, loadedSymbol, optId, dataVersion])
+
+  // the chart's Fib / ATR rows, for by-reference alerts (same options as the ladder)
+  useEffect(() => {
+    const bars = barsRef.current
+    if (optId || phase !== 'ready' || loadedSymbol !== symbol || loadedTf !== tfId || bars.length === 0) {
+      setDeskLevels(symbol, null)
+      return
+    }
+    try {
+      const o = ladderMemo.current.get(bars, tfId, { lookbackOverride: desk.lookbackOverride, narrow: desk.narrow, side: atrRes.side, fvg: desk.fvg })
+      const t = atrRes.show ? o.atr?.levels : null
+      setDeskLevels(symbol, { fib: (o.fib?.levels ?? []).map((l) => ({ ratio: l.ratio, price: l.price })), atr: t ? { sl: t.sl, tp1: t.tp1, tp2: t.tp2, tp3: t.tp3 } : null })
+    } catch {
+      setDeskLevels(symbol, null)
+    }
+  }, [dataVersion, liveTick, phase, symbol, loadedSymbol, loadedTf, tfId, optId, desk.lookbackOverride, desk.narrow, desk.fvg, atrRes])
+
+  const priceOfY = (yLocal: number): number | null => {
+    try {
+      const c = (chartRef.current?.convertFromPixel([{ y: yLocal }], { paneId: 'candle_pane' }) as { value?: number }[] | undefined)?.[0]
+      return typeof c?.value === 'number' && Number.isFinite(c.value) && c.value > 0 ? c.value : null
+    } catch {
+      return null
+    }
+  }
+  const lastClose = (): number | null => {
+    const b = barsRef.current
+    return b.length > 0 ? b[b.length - 1]!.close : null
+  }
+
+  // drag the chip of an alert line to move it (the chip zone only, so panning the chart is untouched). Releasing never fires: the store rewrites price and side together.
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el || optId) return
+    const onDown = (e: MouseEvent) => {
+      const chart = chartRef.current
+      if (!chart || e.button !== 0) return
+      const r = el.getBoundingClientRect()
+      const w = chart.getSize('candle_pane', 'main')?.width ?? r.width
+      const x = e.clientX - r.left
+      if (x < w - CHIP_OFFSET_PX - 140 || x > w - CHIP_OFFSET_PX + 4) return
+      const id = hitAlert(itemsRef.current, e.clientY - r.top, yOfPrice, 8)
+      if (id === null) return
+      e.preventDefault()
+      e.stopPropagation()
+      const startY = e.clientY
+      let moved = false
+      const onMove = (m: MouseEvent) => {
+        if (!moved && Math.abs(m.clientY - startY) < 3) return
+        moved = true
+        const p = priceOfY(m.clientY - r.top)
+        if (p !== null) setDrag({ id, price: p })
+      }
+      const onUp = (u: MouseEvent) => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        const p = priceOfY(u.clientY - r.top)
+        setDrag(null)
+        const last = lastClose()
+        if (!moved || p === null || last === null) return
+        const a = useAlertsStore.getState().alerts.find((x) => x.id === id)
+        if (!a) return
+        if (a.ref_kind !== 'price') setConfirmMove({ id, price: p })
+        else void useAlertsStore.getState().dragTo(id, p, last)
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    }
+    el.addEventListener('mousedown', onDown, true)
+    return () => el.removeEventListener('mousedown', onDown, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optId, symbol])
+
+  // Alt+A: an alert at the crosshair price (only while the pointer is over this chart)
+  useEffect(() => {
+    if (optId) return
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'a') || !ptrRef.current.over) return
+      const p = priceOfY(ptrRef.current.y)
+      const last = lastClose()
+      if (p === null) return
+      e.preventDefault()
+      void useAlertsStore.getState().createPriceAlert({ symbol, price: p, dir: dirForPrice(p, last) })
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, optId])
+
   const commitSymbol = useCallback(
     (raw: string) => {
       const n = normalizeSymbol(raw)
@@ -482,7 +606,8 @@ export function ChartPane({ symbol: symbolProp, onSymbolChange, option = null, o
     const c = chartRef.current?.convertToPixel({ value: p }, { paneId: 'candle_pane' }) as { y?: number } | undefined
     return typeof c?.y === 'number' ? c.y : NaN
   }
-  // right click on the chart: a level line within 6 px, else the candle under the pointer, offers "Ask Arya about this" (never sends)
+  // right click on the chart: the alert items (Alert at price, Alert on this level) and, as before, a level line within 6 px or the candle under the pointer offers
+  // "Ask Arya about this" (never sends). One shared menu shows both.
   const onChartContext = (e: React.MouseEvent<HTMLDivElement>) => {
     const chart = chartRef.current
     const bars = barsRef.current
@@ -491,10 +616,30 @@ export function ChartPane({ symbol: symbolProp, onSymbolChange, option = null, o
     const at = { x: e.clientX, y: e.clientY }
     try {
       const r = e.currentTarget.getBoundingClientRect()
+      const st = useAlertsStore.getState()
+      const last = lastClose()
+      const items: AlertMenuItem[] = []
+      let hit: ReturnType<typeof levelsNow>[number] | null = null
       for (const lv of levelsNow(bars)) {
         const py = yOfPrice(lv.price)
-        if (Number.isFinite(py) && Math.abs(py - (e.clientY - r.top)) <= 6) return askAbout({ kind: 'level', price: lv.price, source: lv.source }, at)
+        if (Number.isFinite(py) && Math.abs(py - (e.clientY - r.top)) <= 6) {
+          hit = lv
+          break
+        }
       }
+      if (hit) {
+        const lv = hit
+        const ref = refFromLevel(lv, { move: tmMove?.symbol === symbol ? tmMove : null, horizon: tm.horizon })
+        items.push({
+          label: `Alert on this level: ${lv.label}`,
+          title: ref ? 'The alert follows this level as it moves.' : 'This level has no stable identity, so the alert is set at its current price.',
+          run: () => void st.createPriceAlert({ symbol, price: lv.price, dir: dirForPrice(lv.price, last), ref }),
+        })
+      }
+      const p = priceOfY(e.clientY - r.top)
+      if (p !== null) items.push({ label: `Alert at ${p.toFixed(2)}`, run: () => void st.createPriceAlert({ symbol, price: p, dir: dirForPrice(p, last) }) })
+      useAlertMenu.getState().setMenu(items.length > 0 ? { x: at.x, y: at.y, items } : null)
+      if (hit) return askAbout({ kind: 'level', price: hit.price, source: hit.source }, at)
       const pt = (chart.convertFromPixel([{ x: e.clientX - r.left }], { paneId: 'candle_pane' }) as { dataIndex?: number; timestamp?: number }[])[0] ?? {}
       const i = typeof pt.dataIndex === 'number' ? pt.dataIndex : -1
       const bar = (typeof pt.timestamp === 'number' ? bars.find((b) => b.timestamp === pt.timestamp) : undefined) ?? bars[i]
@@ -681,7 +826,29 @@ export function ChartPane({ symbol: symbolProp, onSymbolChange, option = null, o
         </div>
       )}
       <div className="chart-body">
-        <div ref={boxRef} className={`chart-canvas${desk.ladder && !option ? ' ladder-on' : ''}`} onContextMenu={onChartContext} />
+        <div
+          ref={boxRef}
+          className={`chart-canvas${desk.ladder && !option ? ' ladder-on' : ''}`}
+          onContextMenu={onChartContext}
+          onMouseMove={(e) => (ptrRef.current = { over: true, y: e.clientY - e.currentTarget.getBoundingClientRect().top })}
+          onMouseLeave={() => (ptrRef.current = { ...ptrRef.current, over: false })}
+        />
+        {confirmMove && (
+          <div className="alert-confirm" role="alertdialog" aria-label="Move a level alert">
+            <span>This alert follows a level. Move it to {confirmMove.price.toFixed(2)} as a plain price alert?</span>
+            <button
+              onClick={() => {
+                const c = confirmMove
+                setConfirmMove(null)
+                const last = lastClose()
+                if (last !== null) void useAlertsStore.getState().convertAndMove(c.id, c.price, last)
+              }}
+            >
+              Convert and move
+            </button>
+            <button onClick={() => setConfirmMove(null)}>Keep following</button>
+          </div>
+        )}
         {desk.ladder && !option && <LadderColumn rows={ladderRows} onPick={onLadderPick} />}
         {phase === 'error' && message && <div className="chart-msg">{message}</div>}
         {option && phase === 'ready' && <div className="chart-note">Option bars carry price only: no volume pane.</div>}

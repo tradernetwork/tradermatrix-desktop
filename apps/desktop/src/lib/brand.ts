@@ -3,6 +3,8 @@
 export const PRODUCT_NAME = 'TraderMatrix Desktop'
 /** Keep in step with tauri.conf.json and Cargo.toml (a test pins all three). */
 export const APP_VERSION = '0.1.0'
+/** M19: said on the Connect Robinhood screen and in About. */
+export const RH_SCOPE_NOTE = 'Robinhood read access reaches all your accounts; trading is limited to the dedicated agentic account.'
 export const NOT_AFFILIATED = 'Works with the Robinhood MCP. Not affiliated with or endorsed by Robinhood.'
 /** Arya's one-line introduction. It lives here, not in the pane, so the pane source stays free of order vocabulary (explain-only guard). */
 export const ARYA_INTRO = "I'm Arya. I explain what's on your screen. I don't place or suggest orders."

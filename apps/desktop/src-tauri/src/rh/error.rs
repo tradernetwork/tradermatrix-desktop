@@ -27,6 +27,10 @@ pub enum RhError {
     /// TraderMatrix (tm module) only: the secret store is locked, so the key cannot be read.
     #[error("vault locked: unlock it to use TraderMatrix")]
     TmVaultLocked,
+    /// TraderMatrix (tm module) only: the local call budget held the call back, so NOTHING was sent. The text starts with
+    /// "TM paused until <ISO time>" (daily budget) or "TM throttled until <ISO time>" (per-minute wall or a server backoff).
+    #[error("{0}")]
+    TmPaused(String),
 }
 
 impl From<RhError> for String {

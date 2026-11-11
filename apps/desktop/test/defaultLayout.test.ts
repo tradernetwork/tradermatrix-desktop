@@ -46,6 +46,17 @@ describe('applyDefaultLayout (M9 TM desk arrangement)', () => {
   })
 })
 
+describe('R-stats panel (M18b)', () => {
+  it('is tabbed with the journal by default (inactive) and old layouts pick it up through DEFAULT_ORDER', async () => {
+    const opts = defaults()
+    expect(opts.find((o) => o.id === 'rstats')!.position).toEqual({ referencePanel: 'journal', direction: 'within' })
+    expect(opts.find((o) => o.id === 'rstats')!.inactive).toBe(true)
+    const { DEFAULT_ORDER } = await import('../src/workspace/panelPlacement')
+    expect(DEFAULT_ORDER).toContain('rstats')
+    expect(DEFAULT_ORDER.indexOf('rstats')).toBeGreaterThan(DEFAULT_ORDER.indexOf('journal'))
+  })
+})
+
 describe('layout key version', () => {
   it('the autosave slot is versioned so the pre-M9 arrangement is not restored over the new default', () => {
     expect(AUTOSAVE_NAME).toBe('__autosave_v2')

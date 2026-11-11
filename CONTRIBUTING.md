@@ -5,9 +5,10 @@
 1. **Test first.** Write the failing test, then the code. Pure logic goes in pure modules so it can be tested without a window.
 2. **No network in tests.** Every test runs against local mock servers (loopback) or in-memory fakes. Nothing may contact Robinhood, TraderMatrix or an LLM provider. Fixtures are synthetic or scrubbed.
 3. **Never place, review or cancel a real order from a test, script or agent.** Mock servers are built to fail the test if an unexpected write tool arrives. Keep that property.
-4. **The chat is explain-only.** Arya has no tools, no order vocabulary in its pane, and a linter on its output. A change that gives the chat a way to build, suggest or trigger an order will not be merged.
-5. **Never commit secrets.** No `.env*`, tokens, keys, real account numbers or real API responses with identifiers. Fake test keys look like `td_live_TESTKEY`, `sk-test-KEY`, `sk-or-TESTKEY`.
-6. **Do not copy proprietary assets.** No Webull or Robinhood assets, no third-party indicator scripts without a clear compatible license.
+4. **Alerts and R tools are informational.** They never place, review, cancel or fill an order beyond setting a ticket field the user then reviews.
+5. **The chat is explain-only.** Arya has no tools, no order vocabulary in its pane, and a linter on its output. A change that gives the chat a way to build, suggest or trigger an order will not be merged.
+6. **Never commit secrets.** No `.env*`, tokens, keys, real account numbers or real API responses with identifiers. Fake test keys look like `td_live_TESTKEY`, `sk-test-KEY`, `sk-or-TESTKEY`.
+7. **Do not copy proprietary assets.** No Webull or Robinhood assets, no third-party indicator scripts without a clear compatible license.
 
 ## Layout
 

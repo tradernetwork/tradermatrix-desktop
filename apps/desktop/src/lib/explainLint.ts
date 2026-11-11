@@ -11,6 +11,11 @@ const PATTERNS: RegExp[] = [
   /(?:^|[.!?:;]\s+|\n[ \t]*[-*•]?[ \t]*)(?:buy|sell)(?![-\w])/gi,
   /\bgo\s+(?:long|short)\b/gi,
   /\btake\s+profits?\b/gi,
+  // sizing advice (M18): a figure of risk or size given as an instruction, never as a description of what the data shows
+  /\brisk(?:ing)?\s+\d+(?:\.\d+)?\s*%/gi,
+  /\b(?:risk|size)\s+(?:no\s+more\s+than|at\s+most|up\s+to|only|at\s+least)\s+\$?\d/gi,
+  /\b(?:cut|reduce|increase|raise|scale|double|halve|trim)\s+(?:your\s+|the\s+)?(?:size|position\s+size|risk)\b/gi,
+  /\b(?:use|take|put\s+on|go\s+with)\s+(?:a\s+|an\s+)?(?:position\s+size|size|risk)\s+of\b/gi,
 ]
 
 export const LINT_NOTICE = 'Some wording here may read like advice. Arya only describes what the data shows; any decision is yours.'

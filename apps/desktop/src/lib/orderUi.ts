@@ -11,6 +11,19 @@ import type {
   RhOrder,
 } from './api'
 import { fmtNum, fmtPrice, maskAccount, type Pill } from './format'
+import type { OrderPhase } from '../stores/orders'
+
+/**
+ * Whether the Review button is disabled. The ONLY inputs are the ticket's own validation problem and the order phase: no sizing helper,
+ * R readout or heat figure feeds this (a test pins that). An unconfirmed order blocks a new review; an order waiting for approval blocks
+ * re-reviewing the SAME ticket.
+ */
+export function reviewDisabled(i: { problem: string | null; phase: OrderPhase; key: string; reviewKey: string | null }): boolean {
+  const busy = i.phase === 'reviewing' || i.phase === 'placing'
+  const blocked = i.phase === 'unknown'
+  const waiting = i.phase === 'awaitingApproval' && i.key === i.reviewKey
+  return !!i.problem || busy || blocked || waiting
+}
 
 // ---- approval banner, alerts, buttons ----
 

@@ -30,6 +30,7 @@ import {
   optionLegLabel,
   optionStrikes,
   pickChain,
+  reviewDisabled,
   roundToTick,
   rowsForChain,
   tickFor,
@@ -39,12 +40,15 @@ import {
   type OptionForm,
 } from '../lib/orderUi'
 import { isSymbol, validateEquity, validateOption } from '../lib/orderValidation'
+import { draftFields } from '../lib/riskHelper'
 import { ticketKey, useOrdersStore, type Ticket } from '../stores/orders'
 import { connectState, useRhStore } from '../stores/rh'
 import { useTicketIntentStore } from '../stores/ticketIntent'
 import { StrikeCheckPanel } from './StrikeCheck'
 import { useDeskStatsStore } from '../stores/deskStats'
 import { OrderReview } from './OrderReview'
+import { RiskHelper } from './RiskHelper'
+import { useRiskStore } from '../stores/risk'
 
 type Tab = 'stock' | 'option'
 
@@ -399,6 +403,33 @@ function Ticket() {
     useOrdersStore.getState().ticketEdited(key)
   }, [key])
 
+  // R tools (M18, informational): when a review comes back, store the planned risk under its review id using the values the ticket
+  // REVIEWED (symbol, side, quantity, price); when the order is `placed`, attach its id to that draft. Nothing here changes, blocks or
+  // delays the order: a failure only leaves this order without an R.
+  const reviewId = useOrdersStore((s) => s.reviewOut?.review_id ?? null)
+  const outcome = useOrdersStore((s) => s.outcome)
+  useEffect(() => {
+    if (phase !== 'reviewed' || !reviewId) return
+    const t = useOrdersStore.getState().ticket
+    if (!t) return
+    const helper = useRiskStore.getState().helper
+    const mult = useRiskStore.getState().settings?.default_option_stop_mult ?? 2
+    const out =
+      t.kind === 'equity'
+        ? draftFields({ kind: 'equity', args: t.args }, helper, { entryHint: stockPx > 0 ? stockPx : null, defaultStopMult: mult })
+        : draftFields({ kind: 'option', args: t.args, underlying: (t.legs?.[0]?.label ?? '').split(' ')[0] || underSym }, helper, { entryHint: null, defaultStopMult: mult })
+    if (out.fields) void useRiskStore.getState().putDraft(reviewId, out.fields)
+    else if (out.reason) useRiskStore.setState({ note: `No R saved for this order: ${out.reason}` })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, reviewId])
+  useEffect(() => {
+    if (phase !== 'placed' || !reviewId || outcome?.kind !== 'placed') return
+    const id = (outcome.order as Record<string, unknown>)?.id
+    if (typeof id !== 'string' || id === '') return
+    // only an order that has a saved draft (the helper was used) is looked up
+    if (useRiskStore.getState().drafts.some((d) => d.review_id === reviewId)) void useRiskStore.getState().attachOrder(reviewId, id)
+  }, [phase, reviewId, outcome])
+
   const problem =
     accountProblem ??
     (ticket.kind === 'equity'
@@ -521,6 +552,18 @@ function Ticket() {
               ))
             )}
           </div>
+          <RiskHelper
+            kind="equity"
+            symbol={stockSym}
+            side={side}
+            entryHint={stockPx > 0 ? stockPx : null}
+            creditHint={null}
+            increment={fractionalOk ? 0.001 : 1}
+            onUse={(q) => {
+              setSizeMode('quantity')
+              setQuantity(q)
+            }}
+          />
           {(type === 'limit' || type === 'stop_limit') && (
             <label>
               Limit price
@@ -644,6 +687,15 @@ function Ticket() {
             Contracts
             <input aria-label="Contracts" inputMode="numeric" value={optQty} onChange={(e) => setOptQty(e.target.value)} />
           </label>
+          <RiskHelper
+            kind="option"
+            symbol={underSym}
+            side={optSide}
+            entryHint={null}
+            creditHint={Number(optPrice) > 0 ? Number(optPrice) : null}
+            increment={1}
+            onUse={(q) => setOptQty(q)}
+          />
           <label>
             Limit price
             <span className="stepper">
@@ -678,7 +730,7 @@ function Ticket() {
         </div>
       )}
       <div className="review-actions pad">
-        <button className="primary" disabled={!!problem || busy || blocked || waiting} onClick={() => void useOrdersStore.getState().review(ticket)}>
+        <button className="primary" disabled={reviewDisabled({ problem, phase, key, reviewKey })} onClick={() => void useOrdersStore.getState().review(ticket)}>
           {phase === 'reviewing' ? 'Reviewing...' : 'Review order'}
         </button>
         {blocked && <span className="muted small">Resolve the unconfirmed order first.</span>}

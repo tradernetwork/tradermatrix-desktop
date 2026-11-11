@@ -43,13 +43,17 @@ pub fn lock() -> std::sync::MutexGuard<'static, ()> {
     CFG_LOCK.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-/// Key shape per provider: OpenRouter keys start `sk-or-`; every key is printable ASCII, no spaces, at most 256 bytes.
+/// Key shape per provider: OpenRouter keys start `sk-or-`, Anthropic keys `sk-ant-` (Anthropic's docs do not state the prefix; it is the long-standing
+/// console key shape, checked loosely so a rotated key still saves); every key is printable ASCII, no spaces, at most 256 bytes.
 pub fn valid_key(p: &Preset, k: &str) -> bool {
     if k.is_empty() || k.len() > MAX_KEY_LEN || !k.bytes().all(|b| b.is_ascii_graphic()) {
         return false;
     }
     if p.profile == Profile::OpenRouter {
         return k.starts_with("sk-or-") && k.len() > "sk-or-".len();
+    }
+    if p.profile == Profile::Anthropic {
+        return k.starts_with("sk-ant-") && k.len() > "sk-ant-".len();
     }
     true
 }
@@ -90,8 +94,24 @@ pub fn set_config(store: &dyn SecretStore, provider: &str, base_url: Option<&str
 /// saved acceptance ONLY while the address is left alone; a newly typed address must be accepted again.
 #[allow(clippy::too_many_arguments)] // one sealed write: every field travels together
 pub fn set_config_ex(store: &dyn SecretStore, provider: &str, base_url: Option<&str>, api_key: Option<&str>, model: Option<&str>, compat: Option<bool>, lan_http: Option<bool>) -> Result<LlmStatus, String> {
+    set_config_gated(store, provider, base_url, api_key, model, compat, lan_http, false)
+}
+
+/// Same, plus the experimental-CLI switch (`llm.experimentalCli`, read by the command). A CLI provider that is not usable under that switch
+/// (every detect-only CLI has no preset at all; `hermes_cli` needs the switch and is never usable in a public build) is refused as `bad_request`.
+#[allow(clippy::too_many_arguments)] // one sealed write: every field travels together
+pub fn set_config_gated(store: &dyn SecretStore, provider: &str, base_url: Option<&str>, api_key: Option<&str>, model: Option<&str>, compat: Option<bool>, lan_http: Option<bool>, experimental: bool) -> Result<LlmStatus, String> {
+    set_config_with_gate(store, provider, base_url, api_key, model, compat, lan_http, super::cli_registry::Gate::current(experimental, false))
+}
+
+/// The full form (M19): the CLI gate also knows the build flavour and the `llm.advancedCli` setting.
+#[allow(clippy::too_many_arguments)] // one sealed write: every field travels together
+pub fn set_config_with_gate(store: &dyn SecretStore, provider: &str, base_url: Option<&str>, api_key: Option<&str>, model: Option<&str>, compat: Option<bool>, lan_http: Option<bool>, gate: super::cli_registry::Gate) -> Result<LlmStatus, String> {
     let bad = || LlmError::BadRequest.code().to_string();
     let p = preset(provider).ok_or_else(bad)?;
+    if p.kind == Kind::Cli && !gate.allows(provider) {
+        return Err(bad());
+    }
     let _g = lock();
     let old = load_unlocked(store);
     let old_p = old.as_ref().and_then(|c| preset(&c.provider));
@@ -100,7 +120,7 @@ pub fn set_config_ex(store: &dyn SecretStore, provider: &str, base_url: Option<&
     // URL: hosted presets are fixed (an explicit different URL is refused, not ignored); local presets and custom accept one.
     let given_url = base_url.map(str::trim).filter(|s| !s.is_empty());
     let new_url_str: Option<String> = match p.kind {
-        Kind::ClaudeCli => {
+        Kind::Cli => {
             if given_url.is_some() {
                 return Err(bad());
             }
@@ -284,7 +304,8 @@ mod tests {
         assert!(!st.key_present);
         assert!(s.get(LLM_KEY_SLOT).unwrap().is_none());
         assert_eq!(st.base_url.as_deref(), Some("http://127.0.0.1:11434/v1"));
-        let st = set(&s, "claude_cli", None, None).unwrap();
+        let personal = super::super::cli_registry::Gate { public: false, experimental: false, advanced: false };
+        let st = set_config_with_gate(&s, "claude_cli", None, None, None, None, None, personal).unwrap();
         assert_eq!((st.provider.as_deref(), st.base_url, st.key_present), (Some("claude_cli"), None, false));
     }
 

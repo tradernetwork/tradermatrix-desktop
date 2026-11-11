@@ -5,6 +5,12 @@
  *   &provider=openai|ollama|hermes|...   with key=saved, start with that provider configured instead of OpenRouter (hermes + &setup=1 shows the Hermes card, its tool-less profile steps and the warning)
  *   &setup=1               open the provider cards on load ("Change provider")
  *   &detect=claude,ollama,lmstudio   pretend these are found on this computer (cards tagged and ordered first)
+ *   &detect=claude,codex,gemini,agy,opencode,hermes,openclaw,...   any roster id also fills the fake registry scan (cards "Found, not supported: <reason>", Check version link)
+ *   &orlogin=pending|done|failed|expired   what the fake "Sign in with OpenRouter" does (default done); open the OpenRouter card with setup=1
+ *   &experimental=1        turns on the experimental-programs switch (Advanced) so a found hermes becomes a usable card
+ *   &publicbuild=1         pretends a public build: every CLI card is hidden unless Advanced > "Show installed-CLI options" is on
+ *   &advanced=0|1          the llm.advancedCli setting (default 0); with publicbuild=1 and advanced=1 the installed-Claude card shows (use &detect=claude)
+ *   &provider=anthropic    with key=saved, start with the Anthropic card configured (fake key sk-ant-TESTKEY); add &setup=1 to see its card
  *   &fail=401|unreachable|not_installed|429|timeout   every ask AND the Test button fail with that fixed code (bad_key / unreachable / not_installed / rate_limited / timeout)
  *   &slow=1                each ask takes 2.5 s (shows the busy state)
  *   &symbol=AAPL           chart symbol (the digest follows it)
@@ -22,6 +28,7 @@
  *   &streaming=1           shows Arya's streaming ring state (a held in-flight answer)
  *   &flagged=1             shows Arya's "check numbers" state (an answer with a number that is not in the data)
  *   &bars=1                ticks "Include recent bars" and seeds 40 fake bars
+ *   &lenses=auto|options,sizing   the Lenses control at load: auto (default, picks cards from what you point at and ask) or up to two chips (options, sizing, posture, chart; none = no card); the drawer shows which cards were sent
  */
 import '../styles/app.css'
 import { StrictMode } from 'react'
@@ -29,6 +36,7 @@ import { createRoot } from 'react-dom/client'
 import { explainVariants } from '../lib/explainFake'
 import { fake, fakeExplain, fakeLlm, fakeThreads, fakeTm, isTauri, TM_KEY_SLOT } from '../lib/api'
 import { providerInfo } from '../lib/llmProviders'
+import { parseLensParam } from '../lib/explainLenses'
 import { useExplainStore } from '../stores/explain'
 import { askAbout, confirmAskAbout } from '../stores/explainFocus'
 import type { AskSpec } from '../lib/explainFocus'
@@ -44,10 +52,16 @@ const symbol = normalizeSymbol(q.get('symbol') ?? '') ?? 'AAPL'
 
 if (!isTauri()) {
   const detect = (q.get('detect') ?? '').split(',')
+  fakeLlm.cliFound = detect.filter((d) => d !== 'ollama' && d !== 'lmstudio' && d !== '')
+  fakeLlm.publicBuild = q.get('publicbuild') === '1'
+  const orl = q.get('orlogin')
+  if (orl === 'pending' || orl === 'done' || orl === 'failed' || orl === 'expired') fakeLlm.orLogin = orl
+  if (q.get('experimental') === '1') void fake.settingSet('llm.experimentalCli', 'true')
+  if (q.get('advanced') === '1') void fake.settingSet('llm.advancedCli', 'true')
   fakeLlm.detect = { claude_cli: detect.includes('claude'), ollama: detect.includes('ollama'), lmstudio: detect.includes('lmstudio') }
   if (key === 'saved') {
     const p = providerInfo(q.get('provider') ?? 'openrouter') ?? providerInfo('openrouter')!
-    fakeLlm.set(p.id, p.id === 'custom' ? 'https://example.com/v1' : p.id === 'hermes' ? 'https://hermes.example.com' : null, p.takesKey ? (p.id === 'openrouter' ? 'sk-or-v1-TESTKEY' : 'sk-test-KEY') : null, p.id === 'custom' || p.id === 'lmstudio' ? 'my-model' : p.id === 'hermes' ? 'tm-explain' : null, null)
+    fakeLlm.set(p.id, p.id === 'custom' ? 'https://example.com/v1' : p.id === 'hermes' ? 'https://hermes.example.com' : null, p.takesKey ? (p.id === 'openrouter' ? 'sk-or-v1-TESTKEY' : p.id === 'anthropic' ? 'sk-ant-TESTKEY' : 'sk-test-KEY') : null, p.id === 'custom' || p.id === 'lmstudio' ? 'my-model' : p.id === 'hermes' ? 'tm-explain' : null, null)
   }
   if (q.get('setup') === '1') useExplainStore.getState().openSetup(true)
   // TM data for the digest comes from the fake TM backend (real sample responses); it needs its own fake key
@@ -126,6 +140,10 @@ const focusDemo = FOCUS_DEMO[q.get('focus') ?? '']
 if (focusDemo) {
   askAbout(focusDemo, { x: 1, y: 1 })
   confirmAskAbout()
+}
+{
+  const l = parseLensParam(q.get('lenses'))
+  useExplainStore.setState({ lensAuto: l.auto, lensPick: l.pick })
 }
 if (q.get('bars') === '1') {
   const t0 = Date.UTC(2026, 10, 11, 9, 30)

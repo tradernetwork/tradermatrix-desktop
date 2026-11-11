@@ -40,13 +40,15 @@ describe('provider table', () => {
 
 describe('card ordering', () => {
   it('detected providers come first, otherwise table order', () => {
-    expect(orderProviders(null).map((c) => c.info.id)).toEqual(PROVIDERS.map((p) => p.id))
+    // hermes_cli (M21, experimental) has no card unless it was found AND the switch is on
+    const NO_EXP = PROVIDERS.filter((p) => p.id !== 'hermes_cli').map((p) => p.id)
+    expect(orderProviders(null).map((c) => c.info.id)).toEqual(NO_EXP)
     expect(orderProviders(null).some((c) => c.found)).toBe(false)
     const o = orderProviders({ claude_cli: true, ollama: true, lmstudio: false })
     expect(o.slice(0, 2).map((c) => [c.info.id, c.found])).toEqual([['ollama', true], ['claude_cli', true]])
     expect(o.slice(2).every((c) => !c.found)).toBe(true)
-    expect(o.slice(2).map((c) => c.info.id)).toEqual(['openrouter', 'openai', 'venice', 'lmstudio', 'custom', 'hermes'])
-    expect(orderProviders({ claude_cli: false, ollama: false, lmstudio: false }).map((c) => c.info.id)).toEqual(PROVIDERS.map((p) => p.id))
+    expect(o.slice(2).map((c) => c.info.id)).toEqual(['openrouter', 'openai', 'venice', 'anthropic', 'lmstudio', 'custom', 'hermes'])
+    expect(orderProviders({ claude_cli: false, ollama: false, lmstudio: false }).map((c) => c.info.id)).toEqual(NO_EXP)
   })
 })
 

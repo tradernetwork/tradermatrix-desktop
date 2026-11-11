@@ -15,7 +15,7 @@ export interface Placement {
  * centre (dockview ignores initialWidth/initialHeight on the first panel): order ticket on its LEFT rail, TM Insight on its RIGHT rail
  * with the Watchlist BELOW it, options and journal tabbed with the chart, positions and orders in a short group below the chart.
  */
-export const DEFAULT_ORDER: readonly PanelId[] = ['chart', 'ticket', 'tm', 'explain', 'watchlist', 'options', 'journal', 'positions', 'orders']
+export const DEFAULT_ORDER: readonly PanelId[] = ['chart', 'ticket', 'tm', 'explain', 'watchlist', 'options', 'journal', 'rstats', 'positions', 'orders', 'alerts']
 
 export const PLACEMENT: Record<PanelId, Placement> = {
   chart: { ref: null, direction: 'right', extra: {} },
@@ -25,8 +25,10 @@ export const PLACEMENT: Record<PanelId, Placement> = {
   watchlist: { ref: 'tm', direction: 'below', extra: { initialHeight: 260 } },
   options: { ref: 'chart', direction: 'within', extra: { inactive: true } },
   journal: { ref: 'chart', direction: 'within', extra: { inactive: true } },
+  rstats: { ref: 'journal', direction: 'within', extra: { inactive: true } },
   positions: { ref: 'chart', direction: 'below', extra: { initialHeight: 210 } },
   orders: { ref: 'positions', direction: 'within', extra: { inactive: true } },
+  alerts: { ref: 'positions', direction: 'within', extra: { inactive: true } },
 }
 
 /** Restore uses the same neighbours as the default layout (a missing watchlist goes below TM Insight; with no TM pane it tabs with any open panel). */

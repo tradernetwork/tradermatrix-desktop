@@ -14,6 +14,7 @@ import { useVaultStore } from '../stores/vault'
 import { ArayaAvatar } from './ArayaAvatar'
 import { EmptyState } from './EmptyState'
 import { ExplainDrawer } from './ExplainDrawer'
+import { ExplainLenses } from './ExplainLenses'
 import { ExplainMeter } from './ExplainMeter'
 import { ExplainReply } from './ExplainReply'
 import { ExplainSetup } from './ExplainSetup'
@@ -31,6 +32,7 @@ export function ExplainPane() {
   const setupOpen = useExplainStore((s) => s.setupOpen)
   const includePositions = useExplainStore((s) => s.includePositions)
   const includeBars = useExplainStore((s) => s.includeBars)
+  const includeRStats = useExplainStore((s) => s.includeRStats)
   const focus = useFocusStore((s) => s.focus)
   const mode = useExplainStore((s) => s.mode)
   const sentLog = useExplainStore((s) => s.sentLog)
@@ -69,7 +71,7 @@ export function ExplainPane() {
   }, [symbol, vaultUnlocked, epoch])
   // The digest reads TM levels from the TM store: make sure this symbol's three legs are loaded (cached 60 s / 5 min, reads only).
   useEffect(() => {
-    void useTmStore.getState().loadSymbol(symbol, ['apex', 'move', 'iv'])
+    useTmStore.getState().scheduleSymbol('explain', symbol, ['apex', 'move', 'iv'])
   }, [symbol])
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: 'end' })
@@ -118,6 +120,9 @@ export function ExplainPane() {
             <label className="small" title="Adds the last 30 bars on screen (open, high, low, close, volume) to what the model sees. Off by default.">
               <input type="checkbox" checked={includeBars} onChange={(e) => useExplainStore.getState().setIncludeBars(e.target.checked)} /> Include recent bars
             </label>
+            <label className="small" title="Adds your R-multiple numbers (trade counts, expectancy, win rate, average win and loss in R, SQN, heat) to what the model sees. Numbers only: no symbols, notes or account. Off by default.">
+              <input type="checkbox" checked={includeRStats} onChange={(e) => useExplainStore.getState().setIncludeRStats(e.target.checked)} /> Include my R stats
+            </label>
             <div className="explain-mode" role="group" aria-label="Teaching mode">
               {EXPLAIN_MODES.map((m) => (
                 <button key={m} type="button" aria-pressed={mode === m} className={mode === m ? 'sel' : ''} onClick={() => void useExplainStore.getState().setMode(m)} title={m === 'beginner' ? 'Defines terms and uses everyday words' : 'Terse and numeric, skips definitions'}>
@@ -140,6 +145,7 @@ export function ExplainPane() {
           )}
           <ExplainThreads symbol={symbol} />
           <ExplainMeter />
+          <ExplainLenses />
       <div className="explain-chips" role="group" aria-label="Quick questions">
         {chipsFor(collectExplainState(false)).map((p) => (
           <button key={p} type="button" disabled={busy} onClick={() => void send(p)}>

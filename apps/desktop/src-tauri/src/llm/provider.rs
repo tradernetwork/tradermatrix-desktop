@@ -5,7 +5,8 @@ use super::url_guard::validate_base_url;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Http,
-    ClaudeCli,
+    /// A local agent CLI run through a recipe (`recipes.rs`): `claude_cli` (verified) and `hermes_cli` (experimental).
+    Cli,
 }
 
 /// Which request-body shape a provider gets. Unknown fields are never sent.
@@ -18,9 +19,11 @@ pub enum Profile {
     Local,
     /// Custom endpoint: same bare minimum as Local.
     Custom,
+    /// Anthropic's native Messages API (M19): `POST /v1/messages`, `x-api-key` + `anthropic-version` headers, top-level `system`. Never the OpenAI-compat layer.
+    Anthropic,
     /// Self-hosted Hermes agent (M16 B5): `/v1/chat/completions` only, the bare body, Bearer key optional.
     Hermes,
-    /// The local `claude` CLI (no HTTP).
+    /// A local agent CLI (no HTTP): claude, or the experimental hermes.
     Cli,
 }
 
@@ -37,15 +40,17 @@ pub struct Preset {
     pub default_model: &'static str,
 }
 
-pub const PRESETS: [Preset; 8] = [
+pub const PRESETS: [Preset; 10] = [
     Preset { id: "openrouter", label: "OpenRouter", kind: Kind::Http, base_url: "https://openrouter.ai/api/v1", key_help_url: "https://openrouter.ai/keys", blurb: "One key, many models, pay as you go. Cheap models cost cents.", profile: Profile::OpenRouter, needs_key: true, default_model: "deepseek/deepseek-v4-flash" },
     Preset { id: "openai", label: "OpenAI", kind: Kind::Http, base_url: "https://api.openai.com/v1", key_help_url: "https://platform.openai.com/api-keys", blurb: "ChatGPT's maker. Needs an API key with billing set up.", profile: Profile::OpenAi, needs_key: true, default_model: "gpt-4.1-mini" },
     Preset { id: "venice", label: "Venice", kind: Kind::Http, base_url: "https://api.venice.ai/api/v1", key_help_url: "https://venice.ai/settings/api", blurb: "Privacy-focused hosted models.", profile: Profile::Venice, needs_key: true, default_model: "llama-3.3-70b" },
+    Preset { id: "anthropic", label: "Anthropic", kind: Kind::Http, base_url: "https://api.anthropic.com", key_help_url: "https://console.anthropic.com", blurb: "Use your own Anthropic API key.", profile: Profile::Anthropic, needs_key: true, default_model: "claude-haiku-5-5" },
     Preset { id: "ollama", label: "Ollama (this computer)", kind: Kind::Http, base_url: "http://127.0.0.1:11434/v1", key_help_url: "", blurb: "Runs a model on your own machine. Free, private, no key.", profile: Profile::Local, needs_key: false, default_model: "llama3.2" },
     Preset { id: "lmstudio", label: "LM Studio (this computer)", kind: Kind::Http, base_url: "http://127.0.0.1:1234/v1", key_help_url: "", blurb: "Runs a model on your own machine. Free, private, no key.", profile: Profile::Local, needs_key: false, default_model: "" },
     Preset { id: "custom", label: "Custom endpoint", kind: Kind::Http, base_url: "", key_help_url: "", blurb: "Any OpenAI-compatible address you already use.", profile: Profile::Custom, needs_key: false, default_model: "" },
     Preset { id: "hermes", label: "Hermes (self-hosted)", kind: Kind::Http, base_url: "", key_help_url: "", blurb: "Your own Hermes agent, reached over HTTPS. You set it up and secure it.", profile: Profile::Hermes, needs_key: false, default_model: "" },
-    Preset { id: "claude_cli", label: "Claude (installed on this computer)", kind: Kind::ClaudeCli, base_url: "", key_help_url: "", blurb: "Uses the Claude app you already signed in to. No key to paste.", profile: Profile::Cli, needs_key: false, default_model: "" },
+    Preset { id: "claude_cli", label: "Claude (installed on this computer)", kind: Kind::Cli, base_url: "", key_help_url: "", blurb: "Uses the Claude app you already signed in to. No key to paste.", profile: Profile::Cli, needs_key: false, default_model: "" },
+    Preset { id: "hermes_cli", label: "Hermes agent (installed on this computer)", kind: Kind::Cli, base_url: "", key_help_url: "", blurb: "Experimental. Runs the Hermes you installed here, text only. Off unless you turn it on in Advanced.", profile: Profile::Cli, needs_key: false, default_model: "" },
 ];
 
 pub fn preset(id: &str) -> Option<&'static Preset> {
@@ -109,7 +114,7 @@ mod tests {
         let n = ids.len();
         ids.dedup();
         assert_eq!(ids.len(), n);
-        assert_eq!(n, 8);
+        assert_eq!(n, 10);
         assert!(preset("openrouter").is_some() && preset("nope").is_none() && preset("").is_none());
     }
 

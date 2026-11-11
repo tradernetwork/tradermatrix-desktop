@@ -158,9 +158,9 @@ async fn only_one_cli_call_at_a_time() {
 #[tokio::test]
 async fn the_provider_dispatch_builds_the_prompt_and_ignores_the_model() {
     let st: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
-    config::set_config(&*st, "claude_cli", None, None, None, None).unwrap();
+    config::set_config_with_gate(&*st, "claude_cli", None, None, None, None, None, super::cli_registry::Gate { public: false, experimental: false, advanced: false }).unwrap();
     let p = fake("echo \"STDIN<<$(/bin/cat)>>\"");
-    let s = LlmState::for_test(st.clone(), Duration::from_secs(5)).with_cli(&p, T);
+    let s = LlmState::for_test(st.clone(), Duration::from_secs(5)).with_cli(&p, T).with_public(false);
     let r = s.explain("", "CHART: symbol=AAPL\nIV: rank=72", "What is this?", vec![super::client::Turn { role: "user".into(), text: "hi".into() }, super::client::Turn { role: "assistant".into(), text: "hello".into() }]).await.unwrap();
     assert!(r.contains(SYSTEM_PROMPT), "explain-only rules travel in the prompt");
     for must in ["<digest>", "CHART: symbol=AAPL", "</digest>", "hi", "hello", "What is this?"] {
@@ -168,9 +168,30 @@ async fn the_provider_dispatch_builds_the_prompt_and_ignores_the_model() {
     }
     assert!(r.find("hello").unwrap() < r.find("What is this?").unwrap());
     // a missing binary surfaces as not_installed through the same path
-    let s2 = LlmState::for_test(st, Duration::from_secs(5)).with_cli(&tmp("none").to_string_lossy(), T);
+    let s2 = LlmState::for_test(st, Duration::from_secs(5)).with_cli(&tmp("none").to_string_lossy(), T).with_public(false);
     assert_eq!(s2.explain("", "d", "q", vec![]).await, Err(LlmError::NotInstalled));
     // and the ping works through the CLI too, with no chart data
     let s3 = LlmState::for_test(Arc::new(MemoryStore::new()), T);
     assert_eq!(s3.ping().await, Err(LlmError::NoKey));
+}
+
+
+// ETXTBSY race: a script written a moment ago can still be held open by a concurrent fork, so exec fails with
+// "Text file busy" (os error 26). A bounded retry fixes it; every other error returns at once.
+#[test]
+fn retry_on_busy_retries_only_text_file_busy_and_is_bounded() {
+    use std::cell::Cell;
+    let busy = || std::io::Error::from_raw_os_error(26);
+    // busy three times, then ok: four calls, Ok
+    let n = Cell::new(0);
+    let r = super::cli::retry_on_busy(|| { n.set(n.get() + 1); if n.get() <= 3 { Err(busy()) } else { Ok(7) } }, 6, Duration::from_millis(1));
+    assert_eq!((r.unwrap(), n.get()), (7, 4));
+    // a different error returns immediately: exactly one call
+    let n = Cell::new(0);
+    let r: std::io::Result<u8> = super::cli::retry_on_busy(|| { n.set(n.get() + 1); Err(std::io::Error::from(std::io::ErrorKind::NotFound)) }, 6, Duration::from_millis(1));
+    assert_eq!((r.unwrap_err().kind(), n.get()), (std::io::ErrorKind::NotFound, 1));
+    // always busy: gives up after the attempt cap with the busy error
+    let n = Cell::new(0);
+    let r: std::io::Result<u8> = super::cli::retry_on_busy(|| { n.set(n.get() + 1); Err(busy()) }, 4, Duration::from_millis(1));
+    assert_eq!((r.unwrap_err().raw_os_error(), n.get()), (Some(26), 4));
 }

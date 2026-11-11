@@ -111,21 +111,21 @@ describe('store: loading, cache, de-dupe', () => {
     await S().loadSymbol('AAPL', ['apex', 'move'])
     expect(tools().sort()).toEqual(['apex', 'move'])
   })
-  it('caches: zero calls within the TTL, apex refetched after 60 s, the rest after 5 min, force bypasses', async () => {
+  it('caches: zero calls within the TTL, every leg (apex too, since M20a) refetched after 5 min, force bypasses', async () => {
     let now = 1_000_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
     await S().loadSymbol('AAPL')
     expect(fakeTm.calls).toHaveLength(4)
     await S().loadSymbol('AAPL')
     expect(fakeTm.calls).toHaveLength(4)
-    now += 61_000
+    now += 61_000 // apex used to expire here (60 s)
     await S().loadSymbol('AAPL')
-    expect(tools().slice(4)).toEqual(['apex'])
+    expect(fakeTm.calls).toHaveLength(4)
     now += 240_000 // 301 s since the first load
     await S().loadSymbol('AAPL')
-    expect(tools().slice(5).sort()).toEqual(['apex', 'iv_rank', 'move', 'snapshot'])
+    expect(tools().slice(4).sort()).toEqual(['apex', 'iv_rank', 'move', 'snapshot'])
     await S().loadSymbol('AAPL', undefined, true)
-    expect(fakeTm.calls).toHaveLength(13)
+    expect(fakeTm.calls).toHaveLength(12)
   })
   it('de-duplicates identical in-flight calls', async () => {
     fakeTm.delayMs = 5

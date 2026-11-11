@@ -100,6 +100,41 @@ body {
   background: var(--tm-warn);
 }
 
+.pill.bad::before {
+  background: var(--tm-bear);
+}
+
+.tm-quota {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tm-quota-chip.bad {
+  color: var(--tm-bear);
+}
+
+.tm-quota-chip.warn {
+  color: var(--tm-warn);
+}
+
+.tm-budgets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--tm-border-hair);
+  padding-top: 8px;
+}
+
+.tm-budgets .tm-pop-row label {
+  flex: 1;
+}
+
+.tm-degraded {
+  color: var(--tm-warn);
+  font-size: 12px;
+}
+
 .workspace {
   flex: 1;
   min-height: 0;
@@ -2015,6 +2050,17 @@ table.kv td,
   border-color: var(--tm-gold);
   color: var(--tm-gold);
 }
+.explain-lenses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+.explain-lenses button[aria-pressed='true'] {
+  border-color: var(--tm-gold);
+  color: var(--tm-gold);
+}
 .explain-drawer {
   padding: 0 8px;
 }
@@ -2146,4 +2192,198 @@ table.kv td,
 .explain-na {
   border-left: 2px solid var(--tm-warn);
   padding-left: 6px;
+}
+
+/* Alerts (M17): toasts and the Alerts pane. Colors from tokens only. */
+.alert-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+.alert-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--tm-surface-3);
+  color: var(--tm-text-primary);
+  border: 1px solid var(--tm-gold);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.alert-toast.more {
+  border-color: var(--tm-border-line);
+  color: var(--tm-text-secondary);
+}
+.alert-toast-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.alert-toast-x {
+  background: none;
+  border: 0;
+  color: var(--tm-text-muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 2px;
+}
+.alert-toast-x:hover {
+  color: var(--tm-text-primary);
+}
+.alerts-pane .pane-head button.active {
+  border-color: var(--tm-gold);
+  color: var(--tm-gold);
+}
+.alert-badge {
+  margin-left: 6px;
+  background: var(--tm-gold);
+  color: var(--tm-chip-ink);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.alerts-section {
+  padding: 6px 10px;
+  color: var(--tm-text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--tm-border-hair);
+}
+.alerts-pane .alert-new {
+  margin-left: 4px;
+}
+.alert-confirm {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--tm-surface-3);
+  border: 1px solid var(--tm-gold);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.alert-prefs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px;
+}
+.alert-new-form {
+  padding: 4px 8px;
+}
+.alert-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding-top: 4px;
+}
+
+/* ---- R tools (M18): size helper, journal R editor, R-stats panel, heat. Informational only: no colour here implies a limit. ---- */
+.risk-helper {
+  grid-column: 1 / -1;
+  border: 1px solid var(--tm-border-hair);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.risk-helper summary {
+  cursor: pointer;
+  color: var(--tm-text-secondary);
+  font-size: 12px;
+}
+.risk-helper .risk-body {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+}
+.risk-helper .risk-out table.kv {
+  width: 100%;
+}
+.risk-helper .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.risk-editor {
+  display: grid;
+  gap: 6px;
+  padding: 6px 4px;
+}
+.risk-editor .risk-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.risk-editor .risk-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+.risk-editor .risk-form label.wide {
+  grid-column: 1 / -1;
+}
+.risk-editor .risk-suggest {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  border: 1px dashed var(--tm-border-line);
+  padding: 4px 8px;
+  color: var(--tm-text-secondary);
+}
+.rstats .hist {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 80px;
+  padding: 0 8px;
+}
+.rstats .hist-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.rstats .hist-bar {
+  width: 100%;
+  background: var(--tm-range);
+  min-height: 0;
+}
+.rstats .hist-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 8px;
+}
+.rstats .rcurve {
+  width: calc(100% - 16px);
+  height: 90px;
+  margin: 0 8px;
+  background: var(--tm-surface-2);
+}
+.heat .pad,
+.rstats .pad {
+  padding: 2px 8px;
+}
+
+/* M19: the Robinhood scope line next to Connect; truncates in a crowded toolbar, full text on hover and in About */
+.rh-scope-note {
+  max-width: 34ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  align-self: center;
 }

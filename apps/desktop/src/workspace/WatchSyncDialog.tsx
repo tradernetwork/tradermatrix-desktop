@@ -1,7 +1,8 @@
 import { createPortal } from 'react-dom'
 import { classifyTmError, tmErrorText } from '../lib/tmUi'
+import { useTmStore } from '../stores/tm'
 import type { Direction, SkipNote } from '../lib/watchSync'
-import { useWatchSyncStore, type SyncFailure } from '../stores/watchSync'
+import { TRUNCATED_TEXT, useWatchSyncStore, type SyncFailure } from '../stores/watchSync'
 import { useMask } from './useMask'
 
 export const SYNC_NOTE = 'Adds only. Nothing is removed on either side. TM notes are not touched.'
@@ -53,6 +54,7 @@ export function WatchSyncDialog() {
   const s = useWatchSyncStore()
   const mask = useMask()
   const { select, setDirection, apply, cancel, closeDialog, refresh } = useWatchSyncStore.getState()
+  const quota = useTmStore((t) => t.quota)
   const applying = s.phase === 'applying'
   const loading = s.phase === 'loading'
   const tmDown = s.tmError !== ''
@@ -105,6 +107,11 @@ export function WatchSyncDialog() {
             </select>
           </label>
         </div>
+        {s.tmTruncated && (
+          <div className="err" role="alert" data-testid="sync-truncated">
+            {TRUNCATED_TEXT}
+          </div>
+        )}
         {tmDown && (
           <div className={`err kind-${classifyTmError(s.tmError)}`} role="alert" data-testid="sync-tm-error">
             {mask(tmErrorText(s.tmError))}
@@ -126,7 +133,7 @@ export function WatchSyncDialog() {
         <div className="sync-diff" data-testid="sync-diff">
           {s.planLoading && <div className="muted">Comparing...</div>}
           {s.planError && <div className="err" role="alert">{mask(s.planError)}</div>}
-          {!plan && !s.planLoading && !s.planError && <div className="muted">{tmDown ? 'Pick a Robinhood list to see it; the comparison needs TraderMatrix.' : 'Choose a list on each side to see the difference.'}</div>}
+          {!plan && !s.planLoading && !s.planError && <div className="muted">{s.tmTruncated ? 'The comparison is off while TraderMatrix sends a preview.' : tmDown ? 'Pick a Robinhood list to see it; the comparison needs TraderMatrix.' : 'Choose a list on each side to see the difference.'}</div>}
           {plan && (
             <>
               <Chips title="Only on TraderMatrix" symbols={plan.onlyTm} />
@@ -150,7 +157,13 @@ export function WatchSyncDialog() {
           <div className="sync-progress" role="status">
             {s.progress ? `Adding to ${s.progress.side === 'tm' ? 'TraderMatrix' : 'Robinhood'}: ${s.progress.done} of ${s.progress.total}` : 'Working...'}
             <button onClick={cancel} disabled={s.cancelRequested}>{s.cancelRequested ? 'Cancelling...' : 'Cancel'}</button>
-            {s.progress?.side === 'tm' && <span className="muted">TraderMatrix is paced at 2 per second.</span>}
+            {s.progress?.side === 'tm' && (
+              <span className="muted">
+                {quota
+                  ? `TraderMatrix allows ${quota.per_min} calls a minute (${quota.remaining} of ${quota.limit} left today), so this runs at that pace and stops cleanly if the day's budget runs low.`
+                  : 'TraderMatrix calls are paced by the call budget.'}
+              </span>
+            )}
           </div>
         )}
 

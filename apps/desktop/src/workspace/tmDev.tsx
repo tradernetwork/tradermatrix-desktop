@@ -6,6 +6,9 @@
  *   &locked=1                  the vault reports locked
  *   &fail=1                    every read fails as a transport error
  *   &symbol=AAPL               chart symbol (the pane follows it; the box below switches it)
+ *   &quota=near|out|preview|slow  the call budget (M20a): near = 172/200 today (amber chip), out = 200/200 and paused until 00:00 UTC (red chip, "TM paused until"
+ *                              on every surface, zero calls), preview = free tier ("TM preview" chip, lists cut to 3), slow = per-minute backoff chip.
+ *                              Any quota value turns the budget wall ON in the fake (without it the fake only counts).
  *   &delay=250                 ms each fake read takes (default 250, shows the loading state)
  *   &scale=1                   rescale the fixture prices to the symbol's fake chart price (off by default: raw fixture numbers)
  */
@@ -13,6 +16,7 @@ import '../styles/app.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { fake, fakePriceAt, fakeTm, isTauri, TM_KEY_SLOT } from '../lib/api'
+import { applyQuotaParam } from '../lib/tmFake'
 import { normalizeSymbol } from '../chart/useChartData'
 import { useRhStore } from '../stores/rh'
 import { TmInsightPane } from './TmInsightPane'
@@ -29,6 +33,7 @@ if (!isTauri()) {
   if (q.get('locked') === '1') fakeTm.mode = 'locked'
   if (q.get('fail') === '1') fakeTm.mode = 'transport'
   fakeTm.delayMs = Number(q.get('delay') ?? 250) || 0
+  applyQuotaParam(q.get('quota'), fakeTm)
   if (q.get('scale') === '1') fakeTm.spotFor = (s) => fakePriceAt(s, Date.now())
 }
 useRhStore.setState({ chartSymbol: symbol })

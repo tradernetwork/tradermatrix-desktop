@@ -60,20 +60,34 @@ async fn fetch(c: &McpClient, tool: &str, args: Value) -> Result<Value, RhError>
     r.data().cloned().ok_or_else(|| RhError::Protocol("TraderMatrix response carried no JSON data".into()))
 }
 
-pub async fn fetch_apex_levels(c: &McpClient, symbol: &str, expiration: Option<&str>) -> Result<ApexLevels, RhError> {
-    parse_apex_levels(&fetch(c, TOOL_APEX_LEVELS, apex_args(symbol, expiration)).await?)
+/// TM marks a free-tier result with a `preview` field (lists cut to the first few items).
+pub fn is_preview(v: &Value) -> bool {
+    crate::tm::types::truthy(v.get("preview"))
 }
 
-pub async fn fetch_expected_move(c: &McpClient, symbol: &str) -> Result<ExpectedMove, RhError> {
-    parse_expected_move(&fetch(c, TOOL_EXPECTED_MOVE, json!({"symbol": symbol})).await?)
+/// A parsed value plus whether the response carried TM's `preview` marker.
+pub type Fetched<T> = (T, bool);
+
+async fn fetch_marked<T>(c: &McpClient, tool: &str, args: Value, parse: impl FnOnce(&Value) -> Result<T, RhError>) -> Result<Fetched<T>, RhError> {
+    let v = fetch(c, tool, args).await?;
+    let preview = is_preview(&v);
+    Ok((parse(&v)?, preview))
 }
 
-pub async fn fetch_iv_rank(c: &McpClient, symbol: &str) -> Result<IvRank, RhError> {
-    parse_iv_rank(&fetch(c, TOOL_IV_RANK, json!({"symbol": symbol})).await?)
+pub async fn fetch_apex_levels(c: &McpClient, symbol: &str, expiration: Option<&str>) -> Result<Fetched<ApexLevels>, RhError> {
+    fetch_marked(c, TOOL_APEX_LEVELS, apex_args(symbol, expiration), parse_apex_levels).await
 }
 
-pub async fn fetch_snapshot(c: &McpClient, symbol: &str) -> Result<Snapshot, RhError> {
-    parse_snapshot(&fetch(c, TOOL_TICKER_SNAPSHOT, json!({"symbol": symbol})).await?)
+pub async fn fetch_expected_move(c: &McpClient, symbol: &str) -> Result<Fetched<ExpectedMove>, RhError> {
+    fetch_marked(c, TOOL_EXPECTED_MOVE, json!({"symbol": symbol}), parse_expected_move).await
+}
+
+pub async fn fetch_iv_rank(c: &McpClient, symbol: &str) -> Result<Fetched<IvRank>, RhError> {
+    fetch_marked(c, TOOL_IV_RANK, json!({"symbol": symbol}), parse_iv_rank).await
+}
+
+pub async fn fetch_snapshot(c: &McpClient, symbol: &str) -> Result<Fetched<Snapshot>, RhError> {
+    fetch_marked(c, TOOL_TICKER_SNAPSHOT, json!({"symbol": symbol}), parse_snapshot).await
 }
 
 /// A list name or a numeric id: trimmed, 1 to 60 chars, no control characters.
@@ -85,8 +99,8 @@ pub fn valid_list_ref(raw: &str) -> Result<String, RhError> {
     Ok(s.to_string())
 }
 
-pub async fn fetch_watchlists(c: &McpClient) -> Result<TmWatchlists, RhError> {
-    parse_watchlists(&fetch(c, TOOL_LIST_WATCHLISTS, json!({})).await?)
+pub async fn fetch_watchlists(c: &McpClient) -> Result<Fetched<TmWatchlists>, RhError> {
+    fetch_marked(c, TOOL_LIST_WATCHLISTS, json!({}), parse_watchlists).await
 }
 
 /// Arguments are exactly `{ticker, list}`: never `notes`.

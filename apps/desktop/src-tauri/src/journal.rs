@@ -102,7 +102,7 @@ fn clean_symbol(s: Option<&str>) -> Result<Option<String>, AppError> {
     }
 }
 
-fn clean_trade_key(s: Option<&str>) -> Result<Option<String>, AppError> {
+pub(crate) fn clean_trade_key(s: Option<&str>) -> Result<Option<String>, AppError> {
     match s.filter(|s| !s.is_empty()) {
         None => Ok(None),
         Some(k) if k.len() <= 64 && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '#' || c == '-') => Ok(Some(k.to_string())),

@@ -1,11 +1,14 @@
 import { DockviewReact, type DockviewReadyEvent, type DockviewApi, type IDockviewPanelProps } from 'dockview-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { setActiveDock } from './activeDock'
+import { startAlertFeeds } from '../stores/alertFeeds'
+import { AlertToast } from './AlertToast'
 import { AskAboutMenu } from './AskAboutMenu'
 import { AUTOSAVE_NAME } from './defaultLayout'
 import { DeskHeader } from './DeskHeader'
 import { ErrorBoundary } from './ErrorBoundary'
 import { FakeBanner } from './FakeBanner'
+import { useAlertsStore } from '../stores/alerts'
 import { flushAutosave, useLayoutStore } from './layoutStore'
 import { PANELS, type PanelId } from './panels'
 import { Toolbar } from './Toolbar'
@@ -35,6 +38,11 @@ export function Workspace() {
   )
 
   useEffect(() => () => dispose.current?.(), [])
+  // stored alerts are local data: load them at start so they are watched even when the Alerts pane is not open
+  useEffect(() => {
+    void useAlertsStore.getState().load()
+    return startAlertFeeds()
+  }, [])
 
   // the autosave is debounced: write a pending one when the window is closing or goes to the background
   useEffect(() => {
@@ -63,6 +71,7 @@ export function Workspace() {
         <DockviewReact className="dockview-theme-dark" components={components} onReady={onReady} />
       </div>
       <AskAboutMenu />
+      <AlertToast />
     </div>
   )
 }

@@ -13,7 +13,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use super::client::{LlmError, Turn, MAX_REPLY_CHARS};
+use super::client::{LlmError, Turn};
+#[cfg(test)]
+use super::recipes::CLAUDE;
+use super::recipes::Recipe;
 
 pub const CLI_NAME: &str = "claude";
 pub const CLI_TIMEOUT: Duration = Duration::from_secs(90);
@@ -25,12 +28,17 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 
 /// First executable regular file named exactly `claude` in an ABSOLUTE `PATH` entry. Never runs anything.
 pub fn find_binary(path_var: &str) -> Option<PathBuf> {
+    find_in_path(path_var, CLI_NAME)
+}
+
+/// First executable regular file named exactly `name` in an ABSOLUTE `PATH` entry (empty and relative entries are skipped). Never runs anything.
+pub fn find_in_path(path_var: &str, name: &str) -> Option<PathBuf> {
     for dir in path_var.split(':') {
         let d = Path::new(dir);
         if dir.is_empty() || !d.is_absolute() {
             continue;
         }
-        let f = d.join(CLI_NAME);
+        let f = d.join(name);
         if let Ok(md) = std::fs::metadata(&f) {
             if md.is_file() && md.permissions().mode() & 0o111 != 0 {
                 return Some(f);
@@ -64,35 +72,53 @@ impl Drop for Busy<'_> {
     }
 }
 
-pub async fn ask_claude_cli(prompt: &str) -> Result<String, LlmError> {
-    run_guarded(&BUSY, &std::env::var("PATH").unwrap_or_default(), prompt, CLI_TIMEOUT).await
+/// One call through the recipe of a CLI provider (one at a time across all CLIs).
+pub async fn ask_cli_provider(recipe: &'static dyn Recipe, prompt: &str) -> Result<String, LlmError> {
+    run_guarded_recipe(&BUSY, recipe, &std::env::var("PATH").unwrap_or_default(), prompt, CLI_TIMEOUT).await
 }
 
 /// One call at a time per `busy` flag; a second concurrent caller gets `rate_limited` without spawning anything.
+#[cfg(test)]
 pub(crate) async fn run_guarded(busy: &AtomicBool, path_var: &str, prompt: &str, timeout: Duration) -> Result<String, LlmError> {
+    run_guarded_recipe(busy, &CLAUDE, path_var, prompt, timeout).await
+}
+
+pub(crate) async fn run_guarded_recipe(busy: &AtomicBool, recipe: &dyn Recipe, path_var: &str, prompt: &str, timeout: Duration) -> Result<String, LlmError> {
     if busy.swap(true, Ordering::SeqCst) {
         return Err(LlmError::RateLimited);
     }
     let _g = Busy(busy);
-    ask_with(path_var, prompt, timeout).await
+    ask_recipe(recipe, path_var, prompt, timeout).await
 }
 
+#[cfg(test)]
 pub(crate) async fn ask_with(path_var: &str, prompt: &str, timeout: Duration) -> Result<String, LlmError> {
-    let bin = find_binary(path_var).ok_or(LlmError::NotInstalled)?;
+    ask_recipe(&CLAUDE, path_var, prompt, timeout).await
+}
+
+/// Runs the recipe's binary with the prompt on stdin. A recipe whose prompt would go in argv is refused before anything is spawned.
+pub(crate) async fn ask_recipe(recipe: &dyn Recipe, path_var: &str, prompt: &str, timeout: Duration) -> Result<String, LlmError> {
+    if !recipe.stdin_prompt() {
+        return Err(LlmError::BadRequest);
+    }
+    let bin = find_in_path(path_var, recipe.binary()).ok_or(LlmError::NotInstalled)?;
+    let args = recipe.args();
+    let env_names: Vec<&'static str> = recipe.env_allowlist().to_vec();
     let (path_var, prompt) = (path_var.to_string(), prompt.to_string());
-    tauri::async_runtime::spawn_blocking(move || run_blocking(&bin, &path_var, &prompt, timeout)).await.map_err(|_| LlmError::BadReply)?
+    let out = tauri::async_runtime::spawn_blocking(move || run_blocking(&bin, &args, &env_names, &path_var, &prompt, timeout)).await.map_err(|_| LlmError::BadReply)??;
+    recipe.parse_answer(&out)
 }
 
 static DIRS: AtomicUsize = AtomicUsize::new(0);
 
 /// A fresh, empty, owner-only directory under the system temp dir; removed on drop.
-struct TempCwd(PathBuf);
+pub(crate) struct TempCwd(pub(crate) PathBuf);
 impl TempCwd {
-    fn new() -> Option<Self> {
+    pub(crate) fn new() -> Option<Self> {
         for _ in 0..8 {
             let mut r = [0u8; 8];
             getrandom::fill(&mut r).ok()?;
-            let name = format!("rebull-claude-{}-{}-{}", std::process::id(), DIRS.fetch_add(1, Ordering::SeqCst), r.iter().map(|b| format!("{b:02x}")).collect::<String>());
+            let name = format!("rebull-cli-{}-{}-{}", std::process::id(), DIRS.fetch_add(1, Ordering::SeqCst), r.iter().map(|b| format!("{b:02x}")).collect::<String>());
             let p = std::env::temp_dir().join(name);
             if std::fs::create_dir(&p).is_ok() {
                 let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o700));
@@ -108,16 +134,36 @@ impl Drop for TempCwd {
     }
 }
 
-fn run_blocking(bin: &Path, path_var: &str, prompt: &str, timeout: Duration) -> Result<String, LlmError> {
+/// Retries `f` while it fails with ETXTBSY ("Text file busy", os error 26), at most `attempts` times with `delay` between. A script that was
+/// written a moment ago can still be held open by a concurrent fork in another thread, which makes exec fail with this error; it clears
+/// within milliseconds. Any other error is returned at once.
+pub(crate) fn retry_on_busy<T>(mut f: impl FnMut() -> std::io::Result<T>, attempts: u32, delay: Duration) -> std::io::Result<T> {
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        match f() {
+            Err(e) if e.raw_os_error() == Some(26) && tries < attempts => std::thread::sleep(delay),
+            other => return other,
+        }
+    }
+}
+
+/// `cmd.spawn()` with the ETXTBSY retry (6 tries, 25 ms apart).
+pub(crate) fn spawn_retry(cmd: &mut Command) -> std::io::Result<std::process::Child> {
+    retry_on_busy(|| cmd.spawn(), 6, Duration::from_millis(25))
+}
+
+/// Returns the raw stdout (capped); the recipe turns it into an answer.
+fn run_blocking(bin: &Path, args: &[String], env_names: &[&str], path_var: &str, prompt: &str, timeout: Duration) -> Result<String, LlmError> {
     let cwd = TempCwd::new().ok_or(LlmError::BadReply)?;
     let mut cmd = Command::new(bin);
-    cmd.args(CLI_ARGS).current_dir(&cwd.0).env_clear().env("PATH", path_var).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
-    for k in ["HOME", "LANG", "LC_ALL", "LC_CTYPE"] {
+    cmd.args(args).current_dir(&cwd.0).env_clear().env("PATH", path_var).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+    for k in env_names {
         if let Ok(v) = std::env::var(k) {
             cmd.env(k, v);
         }
     }
-    let mut child = cmd.spawn().map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { LlmError::NotInstalled } else { LlmError::BadReply })?;
+    let mut child = spawn_retry(&mut cmd).map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { LlmError::NotInstalled } else { LlmError::BadReply })?;
 
     // stdin: written from its own thread so a child that never reads cannot block us; dropping it closes the pipe.
     if let Some(mut si) = child.stdin.take() {
@@ -154,13 +200,13 @@ fn run_blocking(bin: &Path, path_var: &str, prompt: &str, timeout: Duration) -> 
                 // enough output: stop the child, use what we have
                 let _ = child.kill();
                 let _ = child.wait();
-                return finish(&buf);
+                return Ok(String::from_utf8_lossy(&buf).into_owned());
             }
             let status = child.wait().map_err(|_| LlmError::BadReply)?;
             if !status.success() {
                 return Err(LlmError::BadReply);
             }
-            finish(&buf)
+            Ok(String::from_utf8_lossy(&buf).into_owned())
         }
         Err(_) => {
             let _ = child.kill();
@@ -168,13 +214,4 @@ fn run_blocking(bin: &Path, path_var: &str, prompt: &str, timeout: Duration) -> 
             Err(LlmError::Timeout)
         }
     }
-}
-
-fn finish(buf: &[u8]) -> Result<String, LlmError> {
-    let text = String::from_utf8_lossy(buf);
-    let t = text.trim();
-    if t.is_empty() {
-        return Err(LlmError::BadReply);
-    }
-    Ok(t.chars().take(MAX_REPLY_CHARS).collect())
 }

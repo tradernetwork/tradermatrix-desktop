@@ -21,6 +21,8 @@ python3 -I -m http.server -b 127.0.0.1 -d dist 8081
 | `explain-arya.png` | Explain pane, grounding underline | `chat-dev.html?symbol=AAPL&key=saved&reply=ungrounded&positions=1`, then press Ask |
 | `provider-cards.png` | Provider setup cards | `chat-dev.html?key=none` (first-run cards) or `chat-dev.html?setup=1&detect=claude,ollama` |
 | `journal.png` | Journal with P&L and notes | `journal-dev.html?many=1` |
+| `alerts.png` | Chart with alert lines, bells and a toast | **Not captured yet.** `chart-dev.html?symbol=AAPL&tf=15m&tm=1`, right-click for an alert (no quote poller runs on the fake page) |
+| `r-tools.png` | Ticket size helper, journal R column, R-stats panel and heat | **Not captured yet.** Needs a dev-page pass with the fake risk backend |
 | `unlock.png` | Vault unlock screen | **Real app only**: launch the release binary with no vault, or lock an existing one |
 | `layout.png` | Full three-column layout | **Real app only**: the default layout after connecting accounts (the fake pages mount single panes) |
 

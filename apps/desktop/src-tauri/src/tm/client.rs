@@ -9,21 +9,25 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use sqlx::SqlitePool;
 use url::Url;
 
 use crate::error::AppError;
 use crate::rh::{InitGate, Limiter, McpClient, RhError, TokenProvider};
 use crate::secrets::SecretStore;
+use crate::tm::quota::{self, Admit, Budgets, Clock, Gate, Priority, QuotaStatus, Signal, SystemClock};
 use crate::tm::reads;
 use crate::tm::types::*;
 
 pub const TM_ENDPOINT: &str = "https://api.traderdaddy.pro/api/v1/mcp";
 pub const TM_KEY_SLOT: &str = "tm_api_key";
 const KEY_PREFIX: &str = "td_live_";
-/// 2 calls/s, burst 2.
+/// Transport smoothing only (2 requests/s, burst 2, shared by the handshake and calls). The CALL BUDGET (10 per minute, 200 per day,
+/// priorities, learning) is `quota::Gate`, applied in `TmState::gated` before every tool call.
 const RATE_PER_SEC: u32 = 2;
 const RATE_BURST: u32 = 2;
-const TTL_APEX: Duration = Duration::from_secs(60);
+/// Apex levels move slowly (TM's own per-ticker change cooldown is 4 h), so they cache as long as the rest (was 60 s before M20a).
+const TTL_APEX: Duration = Duration::from_secs(300);
 const TTL_OTHER: Duration = Duration::from_secs(300);
 const TTL_WATCHLISTS: Duration = Duration::from_secs(20);
 /// Above this many cache slots, idle ones are dropped.
@@ -101,6 +105,16 @@ pub struct TmState {
     slots: Mutex<HashMap<String, Slot>>,
     /// Test hook: milliseconds added to the clock so TTL expiry can be tested without sleeping.
     skew_ms: AtomicU64,
+    /// Epoch-ms clock for the call budget (a fake one in tests).
+    clock: Arc<dyn Clock>,
+    gate: Mutex<Gate>,
+    pool: Option<SqlitePool>,
+    /// Budgets and today's count are read from the database once, before the first call that needs them.
+    loaded: tokio::sync::OnceCell<()>,
+    /// Serialises writes of today's row so a stale snapshot can never overwrite a newer one.
+    persist_lock: tokio::sync::Mutex<()>,
+    #[cfg(test)]
+    fake: Option<Arc<quota::FakeClock>>,
 }
 
 impl std::fmt::Debug for TmState {
@@ -113,24 +127,184 @@ impl TmState {
     pub fn new(store: Arc<dyn SecretStore>) -> Self {
         let endpoint = Url::parse(TM_ENDPOINT).expect("static TraderMatrix endpoint");
         let tokens = Arc::new(VaultKeyProvider::new(store.clone()));
-        let client = McpClient::new(endpoint, tokens, Arc::new(Limiter::new(RATE_PER_SEC, RATE_BURST)));
+        let client = McpClient::new(endpoint, tokens, Arc::new(Limiter::new(RATE_PER_SEC, RATE_BURST))).without_rate_retry();
         Self::build(store, client)
+    }
+
+    /// Keeps the daily counter and the two budgets in the app database (call before the state is shared).
+    pub fn with_pool(mut self, pool: SqlitePool) -> Self {
+        self.pool = Some(pool);
+        self
+    }
+
+    /// Legacy tests: a fake clock and budgets so large that the gate never interferes.
+    #[cfg(test)]
+    pub(crate) fn for_test(endpoint: Url, store: Arc<dyn SecretStore>) -> Self {
+        let clock = Arc::new(quota::FakeClock::new(quota::utc_ms(2026, 11, 11, 15, 0, 0)));
+        Self::for_test_with(endpoint, store, clock, None, Budgets { per_min: 1000, per_day: 100_000 })
     }
 
     #[cfg(test)]
-    pub(crate) fn for_test(endpoint: Url, store: Arc<dyn SecretStore>) -> Self {
+    pub(crate) fn for_test_with(endpoint: Url, store: Arc<dyn SecretStore>, clock: Arc<quota::FakeClock>, pool: Option<SqlitePool>, budgets: Budgets) -> Self {
         let tokens = Arc::new(VaultKeyProvider::new(store.clone()));
-        let client = McpClient::new(endpoint, tokens, Arc::new(Limiter::new(1000, 1000))).with_delays(Duration::from_millis(20), Duration::from_millis(5));
-        Self::build(store, client)
+        let client = McpClient::new(endpoint, tokens, Arc::new(Limiter::new(1000, 1000))).without_rate_retry().with_delays(Duration::from_millis(20), Duration::from_millis(5));
+        let mut s = Self::build(store, client);
+        s.clock = clock.clone();
+        s.fake = Some(clock);
+        s.gate = Mutex::new(Gate::new(budgets));
+        s.pool = pool;
+        s
     }
 
     fn build(store: Arc<dyn SecretStore>, client: McpClient) -> Self {
-        Self { store, client, init: InitGate::new(), last_error: Mutex::new(None), slots: Mutex::new(HashMap::new()), skew_ms: AtomicU64::new(0) }
+        Self {
+            store,
+            client,
+            init: InitGate::new(),
+            last_error: Mutex::new(None),
+            slots: Mutex::new(HashMap::new()),
+            skew_ms: AtomicU64::new(0),
+            clock: Arc::new(SystemClock),
+            gate: Mutex::new(Gate::new(Budgets::default())),
+            pool: None,
+            loaded: tokio::sync::OnceCell::new(),
+            persist_lock: tokio::sync::Mutex::new(()),
+            #[cfg(test)]
+            fake: None,
+        }
     }
 
     #[cfg(test)]
     pub(crate) fn advance_clock(&self, d: Duration) {
         self.skew_ms.fetch_add(d.as_millis() as u64, Ordering::SeqCst);
+        if let Some(f) = &self.fake {
+            f.advance(d.as_millis() as i64);
+        }
+    }
+
+    // ---- call budget (M20a) ----
+
+    async fn load_once(&self) {
+        self.loaded
+            .get_or_init(|| async {
+                let Some(pool) = &self.pool else { return };
+                let now = self.clock.now_ms();
+                let budgets = quota::load_budgets_opt(pool).await;
+                let row = quota::load_day(pool, &quota::day_string(now)).await.ok().flatten();
+                if let Ok(mut g) = self.gate.lock() {
+                    if let Some(b) = budgets {
+                        g.set_budgets(b);
+                    }
+                    if let Some(r) = row {
+                        g.restore(now, r);
+                    }
+                }
+            })
+            .await;
+    }
+
+    /// Writes today's row (the latest state, under a lock so writes cannot cross). Counts and flags only. A failed write is not fatal:
+    /// the in-memory count keeps working and the next call writes it again.
+    async fn persist(&self) {
+        let Some(pool) = &self.pool else { return };
+        let _g = self.persist_lock.lock().await;
+        let now = self.clock.now_ms();
+        let row = match self.gate.lock() {
+            Ok(mut g) => g.day_row(now),
+            Err(_) => return,
+        };
+        let _ = quota::save_day(pool, &row).await;
+    }
+
+    /// Would the budget refuse this call right now? Nothing is recorded and nothing is sent.
+    fn peek(&self, prio: Priority) -> Result<(), RhError> {
+        let now = self.clock.now_ms();
+        let mut g = self.gate.lock().map_err(|_| RhError::Protocol("quota gate poisoned".into()))?;
+        match g.check(now, prio) {
+            Admit::Deny { message, .. } => Err(RhError::TmPaused(message)),
+            _ => Ok(()),
+        }
+    }
+
+    /// Takes one slot: waits (on the clock) when the wait is short, refuses with the time when it is not.
+    async fn admit(&self, prio: Priority) -> Result<(), RhError> {
+        loop {
+            let now = self.clock.now_ms();
+            let step = self.gate.lock().map_err(|_| RhError::Protocol("quota gate poisoned".into()))?.try_acquire(now, prio);
+            match step {
+                Admit::Go => {
+                    self.persist().await;
+                    return Ok(());
+                }
+                Admit::Wait { until_ms } => self.clock.sleep_until_ms(until_ms).await,
+                Admit::Deny { message, .. } => return Err(RhError::TmPaused(message)),
+            }
+        }
+    }
+
+    /// Reads what the server said about its limits (tool errors, HTTP errors, 429) and tightens the gate. Never loosens it.
+    async fn learn<T>(&self, r: &Result<T, RhError>) {
+        let Err(e) = r else { return };
+        let signal = match e {
+            RhError::RateLimited => Some(Signal::SlowDown),
+            RhError::Tool(t) | RhError::Protocol(t) | RhError::Http(_, t) => quota::signal_from_text(t),
+            _ => None,
+        };
+        if let Some(sig) = signal {
+            let now = self.clock.now_ms();
+            if let Ok(mut g) = self.gate.lock() {
+                g.learn(now, sig);
+            }
+            self.persist().await;
+        }
+    }
+
+    fn note_preview(&self, preview: bool) {
+        if preview {
+            if let Ok(mut g) = self.gate.lock() {
+                g.note_preview();
+            }
+        }
+    }
+
+    /// One TM tool call under the budget. Order matters for "nothing sent": a missing or locked key is reported first (free), a paused
+    /// day is reported before even the handshake, the handshake is not a tool call (not counted), then a slot is taken and the call runs.
+    async fn gated<'a, T, F, Fut>(&'a self, prio: Priority, f: F) -> Result<T, RhError>
+    where
+        F: FnOnce(&'a McpClient) -> Fut,
+        Fut: Future<Output = Result<T, RhError>> + 'a,
+    {
+        self.load_once().await;
+        self.client.preflight().await?;
+        self.peek(prio)?;
+        let c = self.ready().await?;
+        self.admit(prio).await?;
+        let r = f(c).await;
+        self.learn(&r).await;
+        r
+    }
+
+    /// Today's count, the effective limit, the budgets and any pause or backoff. Local only: this never calls TraderMatrix.
+    pub async fn quota_status(&self) -> QuotaStatus {
+        self.load_once().await;
+        let now = self.clock.now_ms();
+        match self.gate.lock() {
+            Ok(mut g) => g.status(now),
+            Err(p) => p.into_inner().status(now),
+        }
+    }
+
+    /// Saves and applies the two budgets (validated: 1 to 12 per minute, 1 to 10000 per day).
+    pub async fn quota_set(&self, per_min: u32, per_day: u32) -> Result<QuotaStatus, RhError> {
+        let b = Budgets::validate(per_min, per_day)?;
+        self.load_once().await;
+        if let Some(pool) = &self.pool {
+            quota::save_budgets(pool, &b).await.map_err(|e| RhError::Protocol(format!("could not save the budgets: {e}")))?;
+        }
+        if let Ok(mut g) = self.gate.lock() {
+            g.set_budgets(b);
+        }
+        Ok(self.quota_status().await)
     }
 
     fn now(&self) -> Instant {
@@ -223,44 +397,71 @@ impl TmState {
     }
 
     pub async fn apex_levels(&self, symbol: &str, expiration: Option<&str>) -> Result<ApexLevels, RhError> {
+        self.apex_levels_with(symbol, expiration, Priority::Interactive).await
+    }
+
+    pub async fn apex_levels_with(&self, symbol: &str, expiration: Option<&str>, prio: Priority) -> Result<ApexLevels, RhError> {
         let r = async {
             let sym = reads::valid_symbol(symbol)?;
             let exp = expiration.map(reads::valid_expiration).transpose()?;
             let key = format!("{}|{}", reads::TOOL_APEX_LEVELS, reads::apex_args(&sym, exp.as_deref()));
-            self.cached(key, TTL_APEX, || async { reads::fetch_apex_levels(self.ready().await?, &sym, exp.as_deref()).await }).await
+            self.cached(key, TTL_APEX, || async { self.marked(prio, |c| reads::fetch_apex_levels(c, &sym, exp.as_deref())).await }).await
         }
         .await;
         self.note(r)
     }
 
     pub async fn expected_move(&self, symbol: &str) -> Result<ExpectedMove, RhError> {
+        self.expected_move_with(symbol, Priority::Interactive).await
+    }
+
+    pub async fn expected_move_with(&self, symbol: &str, prio: Priority) -> Result<ExpectedMove, RhError> {
         let r = async {
             let sym = reads::valid_symbol(symbol)?;
             let key = format!("{}|{sym}", reads::TOOL_EXPECTED_MOVE);
-            self.cached(key, TTL_OTHER, || async { reads::fetch_expected_move(self.ready().await?, &sym).await }).await
+            self.cached(key, TTL_OTHER, || async { self.marked(prio, |c| reads::fetch_expected_move(c, &sym)).await }).await
         }
         .await;
         self.note(r)
     }
 
     pub async fn iv_rank(&self, symbol: &str) -> Result<IvRank, RhError> {
+        self.iv_rank_with(symbol, Priority::Interactive).await
+    }
+
+    pub async fn iv_rank_with(&self, symbol: &str, prio: Priority) -> Result<IvRank, RhError> {
         let r = async {
             let sym = reads::valid_symbol(symbol)?;
             let key = format!("{}|{sym}", reads::TOOL_IV_RANK);
-            self.cached(key, TTL_OTHER, || async { reads::fetch_iv_rank(self.ready().await?, &sym).await }).await
+            self.cached(key, TTL_OTHER, || async { self.marked(prio, |c| reads::fetch_iv_rank(c, &sym)).await }).await
         }
         .await;
         self.note(r)
     }
 
     pub async fn snapshot(&self, symbol: &str) -> Result<Snapshot, RhError> {
+        self.snapshot_with(symbol, Priority::Interactive).await
+    }
+
+    pub async fn snapshot_with(&self, symbol: &str, prio: Priority) -> Result<Snapshot, RhError> {
         let r = async {
             let sym = reads::valid_symbol(symbol)?;
             let key = format!("{}|{sym}", reads::TOOL_TICKER_SNAPSHOT);
-            self.cached(key, TTL_OTHER, || async { reads::fetch_snapshot(self.ready().await?, &sym).await }).await
+            self.cached(key, TTL_OTHER, || async { self.marked(prio, |c| reads::fetch_snapshot(c, &sym)).await }).await
         }
         .await;
         self.note(r)
+    }
+
+    /// A budgeted read whose response may carry TM's `preview` marker.
+    async fn marked<'a, T, F, Fut>(&'a self, prio: Priority, f: F) -> Result<T, RhError>
+    where
+        F: FnOnce(&'a McpClient) -> Fut,
+        Fut: Future<Output = Result<reads::Fetched<T>, RhError>> + 'a,
+    {
+        let (v, preview) = self.gated(prio, f).await?;
+        self.note_preview(preview);
+        Ok(v)
     }
 
     fn watchlists_key() -> String {
@@ -276,17 +477,28 @@ impl TmState {
     }
 
     pub async fn watchlists(&self) -> Result<TmWatchlists, RhError> {
-        let r = self.cached(Self::watchlists_key(), TTL_WATCHLISTS, || async { reads::fetch_watchlists(self.ready().await?).await }).await;
+        self.watchlists_with(Priority::Interactive).await
+    }
+
+    pub async fn watchlists_with(&self, prio: Priority) -> Result<TmWatchlists, RhError> {
+        let r = self.cached(Self::watchlists_key(), TTL_WATCHLISTS, || async { self.marked(prio, reads::fetch_watchlists).await }).await;
         self.note(r)
     }
 
     /// Adds one symbol to a list (name or numeric id). Idempotent upstream. Never auto-retried (not a read tool).
     pub async fn watchlist_add(&self, list: &str, ticker: &str) -> Result<TmAddOutcome, RhError> {
+        self.watchlist_add_with(list, ticker, Priority::Interactive).await
+    }
+
+    pub async fn watchlist_add_with(&self, list: &str, ticker: &str, prio: Priority) -> Result<TmAddOutcome, RhError> {
         let r = async {
             let list = reads::valid_list_ref(list)?;
             let sym = reads::valid_symbol(ticker)?;
-            let out = reads::add_to_watchlist(self.ready().await?, &list, &sym).await;
-            self.invalidate_watchlists();
+            // A call the budget refused never reached the server, so the cached list is still trustworthy: invalidate only after a real attempt.
+            let out = self.gated(prio, |c| reads::add_to_watchlist(c, &list, &sym)).await;
+            if !matches!(out, Err(RhError::TmPaused(_))) {
+                self.invalidate_watchlists();
+            }
             out
         }
         .await;
@@ -295,10 +507,16 @@ impl TmState {
 
     /// Creates an empty list. Never auto-retried.
     pub async fn watchlist_create(&self, name: &str) -> Result<TmWatchlistMeta, RhError> {
+        self.watchlist_create_with(name, Priority::Interactive).await
+    }
+
+    pub async fn watchlist_create_with(&self, name: &str, prio: Priority) -> Result<TmWatchlistMeta, RhError> {
         let r = async {
             let name = reads::valid_list_ref(name)?;
-            let out = reads::create_watchlist(self.ready().await?, &name).await;
-            self.invalidate_watchlists();
+            let out = self.gated(prio, |c| reads::create_watchlist(c, &name)).await;
+            if !matches!(out, Err(RhError::TmPaused(_))) {
+                self.invalidate_watchlists();
+            }
             out
         }
         .await;

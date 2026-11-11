@@ -1,11 +1,16 @@
+import type { Alert, AlertEvent, AlertPatch, FireOutcome, NewAlert as NewAlertRow } from '../alerts/types'
+import { fakeAlerts } from './alertsFake'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { cleanTags, exportRowCount, NOTE_DEFAULT_LIMIT, NOTE_MAX_LIMIT, validateBody } from './journalRules'
 import { validateEquity, validateOption } from './orderValidation'
 import { explainVariants, fakeExplainReply } from './explainFake'
+import { isLensId, MAX_LENSES } from './explainLenses'
 import { FakeThreads, type AppendOut, type NewMessage, type StoredMessage, type ThreadMeta } from './explainThreadsFake'
-import { keyShapeError, providerInfo, validateBaseUrlText, validateHermesUrlText } from './llmProviders'
+import { fakeCliDetect, keyShapeError, providerInfo, validateBaseUrlText, validateHermesUrlText, type CliDetect } from './llmProviders'
+export type { CliDetect, CliFound } from './llmProviders'
 import { FakeTm } from './tmFake'
+import { FakeRisk } from './riskFake'
 import { OPTION_ID, validateDescription, validateEmoji, validateListName, WATCH_MAX_SYMBOLS, WATCH_SYMBOL } from './watchRules'
 
 export interface LayoutMeta {
@@ -379,6 +384,29 @@ export interface TmWatchlists {
   tickers_per_list: number | null
   tickers_across_all_lists: number | null
   max_lists: number | null
+  /** A free-tier PREVIEW or otherwise cut-short response. It is never the whole list: the sync must not diff it. */
+  truncated: boolean
+}
+/** M20a: who is asking. Interactive = the symbol on screen; background = sync and stored snapshots; opportunistic = alert polling (dropped, never queued). */
+export type TmPriority = 'interactive' | 'background' | 'opportunistic'
+/** M20a: the local TraderMatrix call budget (counts and times only; never calls TraderMatrix). Times are epoch ms; the day is UTC (unverified against the server). */
+export interface QuotaStatus {
+  day: string
+  used: number
+  /** The effective daily limit: the user's setting, or a smaller one the server told us. */
+  limit: number
+  remaining: number
+  per_min: number
+  per_day: number
+  limit_seen: number | null
+  window_used: number
+  /** A per-minute wall or a server backoff holds calls back until then. */
+  throttled_until_ms: number | null
+  paused: boolean
+  paused_until_ms: number | null
+  /** A result carried TM's `preview` marker today (free tier: lists cut short). */
+  preview: boolean
+  now_ms: number
 }
 export interface TmAddOutcome {
   /** false = the symbol was already on the list (a success). */
@@ -549,6 +577,126 @@ function checkSeries(source: string, instrument: string, interval: string): void
   if (!/^[A-Za-z0-9]{1,12}$/.test(interval)) throw new Error('invalid input: interval is not valid')
 }
 
+// ---- R tools (M18; mirrors src-tauri/src/risk.rs; local SQLite only, INFORMATIONAL: nothing here touches an order) ----
+export interface RiskSettings {
+  default_risk_pct: number
+  default_option_stop_mult: number
+  r_fallback_enabled: boolean
+}
+/** deny_unknown_fields in Rust: only these keys. */
+export interface RiskSettingsIn {
+  default_risk_pct?: number | null
+  default_option_stop_mult?: number | null
+  r_fallback_enabled?: boolean | null
+}
+export type RiskBasis = 'equity_stop' | 'spread_max_loss' | 'stop_mult' | 'manual_dollars'
+export interface TradeRisk {
+  trade_key: string
+  created_at: string
+  updated_at: string
+  account_masked: string | null
+  symbol: string
+  instrument: string
+  risk_basis: string
+  planned_risk_usd: number
+  qty: number | null
+  entry_price: number | null
+  stop_price: number | null
+  multiplier: number
+  /** `draft` (confirmed from a reviewed order) or `manual`. */
+  source: string
+  /** True for a manual entry: the R was set after the trade, not before it. */
+  after_the_fact: boolean
+  note: string | null
+}
+export interface RiskDraft {
+  review_id: string
+  created_at: number
+  account_masked: string | null
+  symbol: string
+  /** The ENTRY side of the reviewed order. */
+  side: string
+  instrument: string
+  risk_basis: string
+  planned_risk_usd: number
+  qty: number | null
+  entry_price: number | null
+  stop_price: number | null
+  multiplier: number
+  order_id: string | null
+  placed_at: number | null
+  expires_at: number
+}
+export interface DraftFieldsIn {
+  side: string
+  account_masked?: string | null
+  symbol: string
+  instrument: string
+  risk_basis: string
+  planned_risk_usd: number
+  qty?: number | null
+  entry_price?: number | null
+  stop_price?: number | null
+  multiplier?: number | null
+}
+/** Exactly one of `fields` or `order_id`. */
+export interface DraftIn {
+  review_id: string
+  fields?: DraftFieldsIn | null
+  order_id?: string | null
+}
+export interface ManualRiskIn {
+  account_masked?: string | null
+  symbol: string
+  instrument: string
+  risk_basis: string
+  planned_risk_usd: number
+  qty?: number | null
+  entry_price?: number | null
+  stop_price?: number | null
+  multiplier?: number | null
+  note?: string | null
+}
+/** Exactly one of `review_id` or `manual`. The trade key is always the one the user chose. */
+export interface PromoteIn {
+  trade_key: string
+  review_id?: string | null
+  manual?: ManualRiskIn | null
+}
+export interface RiskState {
+  settings: RiskSettings
+  risk: TradeRisk[]
+  drafts: RiskDraft[]
+}
+export interface RiskTradeIn {
+  trade_key: string
+  symbol: string
+  side?: string | null
+  quantity?: number | null
+  realized_gain?: number | null
+  timestamp?: string | null
+}
+export interface StatRow {
+  trade_key: string
+  symbol: string
+  planned_risk_usd: number
+  risk_basis: string
+  source: string
+  realized_gain: number | null
+  closed_at: string | null
+}
+export interface RiskSuggestion {
+  review_id: string
+  trade_key: string
+}
+export interface RiskStatsOut {
+  rows: StatRow[]
+  trades_total: number
+  with_risk: number
+  /** DATA ONLY: nothing is linked until the user confirms (risk_promote). */
+  suggestions: RiskSuggestion[]
+}
+
 /** In-memory stand-in with the same validation rules as the Rust core. Used outside Tauri (tests, plain vite). */
 class FakeBackend {
   layouts = new Map<string, { name: string; json: string; updated_at: string; seq: number }>()
@@ -622,6 +770,7 @@ class FakeBackend {
     fakeExplain.reset()
     fakeThreads.reset()
     fakeLlm.reset()
+    fakeRisk.reset()
   }
 
   vaultStatus(): VaultStatus {
@@ -755,6 +904,7 @@ class FakeBackend {
 
 export const fake = new FakeBackend()
 /** Fake TraderMatrix: the key is "present" exactly when the fake secret store holds the tm_api_key slot. */
+export const fakeRisk = new FakeRisk()
 export const fakeTm = new FakeTm(() => fake.secrets.has(TM_KEY_SLOT))
 
 /** M14b fake provider config: same rules as src-tauri/src/llm/config.rs (sealed key + address, hosted URLs fixed, keyless providers hold no key). */
@@ -779,6 +929,13 @@ class FakeLlm {
   cfg: { provider: string; base_url: string | null; model: string | null; compat: boolean; lan_http: boolean } | null = null
   keyPresent = false
   detect: LlmDetect = { claude_cli: false, ollama: false, lmstudio: false }
+  /** M21: roster ids the fake registry scan "finds" (`chat-dev.html?detect=`), pretend public build, fake sign-in outcome, call counters. */
+  cliFound: string[] = []
+  publicBuild = false
+  orLogin: 'pending' | 'done' | 'failed' | 'expired' = 'done'
+  loginStarts = 0
+  versionCalls: string[] = []
+  private loginId = ''
   /** Every config_set call as the webview made it (key reduced to presence). */
   setCalls: { provider: string; baseUrl: string | null; hasKey: boolean; model: string | null; compat: boolean | null; lanHttp: boolean | null }[] = []
   testCalls = 0
@@ -788,6 +945,38 @@ class FakeLlm {
     this.detect = { claude_cli: false, ollama: false, lmstudio: false }
     this.setCalls = []
     this.testCalls = 0
+    this.cliFound = []
+    this.publicBuild = false
+    this.orLogin = 'done'
+    this.loginStarts = 0
+    this.versionCalls = []
+    this.loginId = ''
+  }
+  cliDetect(): CliDetect {
+    return fakeCliDetect(this.cliFound, this.publicBuild)
+  }
+  checkVersion(id: string): string {
+    this.versionCalls.push(id)
+    if (!fakeCliDetect(this.cliFound).found.some((f) => f.id === id)) throw new Error('not_installed')
+    return `fake ${id} 1.0.0`
+  }
+  /** Same gate as Rust `Gate::allows` (M19): claude_cli unless a public build has Advanced (`llm.advancedCli`) off; hermes_cli also needs the experimental switch. */
+  private cliAllowed(provider: string): boolean {
+    const visible = !this.publicBuild || fake.settingGet('llm.advancedCli') === 'true'
+    if (provider === 'claude_cli') return visible
+    if (provider === 'hermes_cli') return visible && fake.settingGet('llm.experimentalCli') === 'true'
+    return true
+  }
+  loginStart(): { url: string; pending_id: string } {
+    this.loginStarts += 1
+    this.loginId = `fakepending${this.loginStarts}`
+    return { url: 'https://openrouter.ai/auth?callback_url=http%3A%2F%2Flocalhost%3A51234%2Fcallback&code_challenge=FAKE&code_challenge_method=S256&key_label=TraderMatrix+Desktop&state=FAKE', pending_id: this.loginId }
+  }
+  /** `done` saves a fake key through the same rules as a paste (the key itself is never exposed anywhere). */
+  loginStatus(id: string): 'pending' | 'done' | 'expired' | 'failed' {
+    if (id !== this.loginId) return 'failed'
+    if (this.orLogin === 'done') this.set('openrouter', null, 'sk-or-v1-FAKEFAKEFAKEFAKE', null, null)
+    return this.orLogin
   }
   /** Ready to answer: a provider is chosen and, when it needs a key, one is saved. */
   ready(): boolean {
@@ -805,7 +994,7 @@ class FakeLlm {
     this.setCalls.push({ provider, baseUrl, hasKey: !!apiKey, model, compat, lanHttp })
     const bad = () => new Error('bad_request')
     const p = providerInfo(provider)
-    if (!p) throw bad()
+    if (!p || !this.cliAllowed(provider)) throw bad()
     const old = this.cfg
     const same = old?.provider === provider
     const given = baseUrl?.trim() || null
@@ -910,7 +1099,7 @@ class FakeExplain {
   canStream = true
   /** false = the provider reports no usage: chars/4, flagged estimated. */
   reportsUsage = true
-  calls: { model: string; digest: string; question: string; history: { role: string; text: string }[]; mode: string; requestId: string }[] = []
+  calls: { model: string; digest: string; question: string; history: { role: string; text: string }[]; mode: string; requestId: string; lenses: string[] }[] = []
   stopped: string[] = []
   deltaCount = 0
   sessionTokens = 0
@@ -978,11 +1167,13 @@ class FakeExplain {
   private priced(provider: string, model: string): boolean {
     return (provider === 'openrouter' && (model === 'deepseek/deepseek-v4-flash' || model === 'deepseek/deepseek-v4.1-flash')) || provider === 'ollama' || provider === 'lmstudio'
   }
-  async ask(model: string, digest: string, question: string, history: { role: string; text: string }[], mode: string, requestId = 'r-compat', onDelta?: (t: string) => void): Promise<AskOut> {
+  async ask(model: string, digest: string, question: string, history: { role: string; text: string }[], mode: string, requestId = 'r-compat', onDelta?: (t: string) => void, lenses: string[] = []): Promise<AskOut> {
+    // Same rule as Rust: a lens id outside the closed list (or a repeat, or a third) is refused before anything is recorded or sent.
+    if (lenses.length > MAX_LENSES || !lenses.every(isLensId) || new Set(lenses).size !== lenses.length) throw new Error('bad_request')
     // Same order as Rust: the budgets are checked before anything is sent.
     const b = fakeBudgets((k) => fake.settings.get(k) ?? null)
     if (this.sessionTokens >= b.session || this.monthUsd >= b.month) throw new Error('budget')
-    this.calls.push({ model, digest, question, history, mode, requestId })
+    this.calls.push({ model, digest, question, history, mode, requestId, lenses: [...lenses] })
     if (this.inflight) throw new Error('rate_limited') // one request at a time
     this.inflight = requestId
     try {
@@ -1672,7 +1863,7 @@ function call<T>(cmd: string, args: Record<string, unknown>, fallback: () => T):
 }
 
 /** Tauri path of explain_ask: listens for this request's `explain:delta` events while the command runs, then stops listening. */
-async function askStreaming(args: { model: string; digest: string; question: string; history: { role: string; text: string }[]; mode: string; requestId: string }, onDelta?: (t: string) => void): Promise<AskOut> {
+async function askStreaming(args: { model: string; digest: string; question: string; history: { role: string; text: string }[]; mode: string; requestId: string; lenses: string[] }, onDelta?: (t: string) => void): Promise<AskOut> {
   let off: (() => void) | null = null
   try {
     off = await listen<{ request_id: string; text: string }>('explain:delta', (e) => {
@@ -1785,18 +1976,25 @@ export const api = {
     call<JournalExport>('journal_export_csv', { span, account }, () => fake.journalExportCsv(span, account)),
   // TraderMatrix: four typed read-only calls plus key presence. The key is written with secretSet and never read back.
   tmStatus: () => call<TmStatus>('tm_status', {}, () => fakeTm.status()),
-  tmApexLevels: (symbol: string, expiration?: string) =>
-    callAsync<ApexLevels>('tm_apex_levels', { symbol, expiration: expiration ?? null }, () => fakeTm.apex(symbol, expiration)),
-  tmExpectedMove: (symbol: string) => callAsync<ExpectedMove>('tm_expected_move', { symbol }, () => fakeTm.expectedMove(symbol)),
-  tmIvRank: (symbol: string) => callAsync<IvRank>('tm_iv_rank', { symbol }, () => fakeTm.ivRank(symbol)),
-  tmSnapshot: (symbol: string) => callAsync<TmSnapshot>('tm_snapshot', { symbol }, () => fakeTm.snapshot(symbol)),
+  // M20a: every TM call may carry a priority (default interactive); the Rust core owns the budget (10/min, 200/day, learned from TM's own messages).
+  tmApexLevels: (symbol: string, expiration?: string, priority?: TmPriority) =>
+    callAsync<ApexLevels>('tm_apex_levels', { symbol, expiration: expiration ?? null, priority: priority ?? null }, () => fakeTm.apex(symbol, expiration, priority)),
+  tmExpectedMove: (symbol: string, priority?: TmPriority) =>
+    callAsync<ExpectedMove>('tm_expected_move', { symbol, priority: priority ?? null }, () => fakeTm.expectedMove(symbol, priority)),
+  tmIvRank: (symbol: string, priority?: TmPriority) => callAsync<IvRank>('tm_iv_rank', { symbol, priority: priority ?? null }, () => fakeTm.ivRank(symbol, priority)),
+  tmSnapshot: (symbol: string, priority?: TmPriority) => callAsync<TmSnapshot>('tm_snapshot', { symbol, priority: priority ?? null }, () => fakeTm.snapshot(symbol, priority)),
+  // M20a: local counter and the two budgets (calls per minute 1 to 12, calls per day 1 to 10000). Never reach TraderMatrix.
+  tmQuotaStatus: () => call<QuotaStatus>('tm_quota_status', {}, () => fakeTm.quota.status()),
+  tmQuotaSet: (perMin: number, perDay: number) => call<QuotaStatus>('tm_quota_set', { perMin, perDay }, () => fakeTm.quota.set(perMin, perDay)),
   // M8 watchlist sync: list, add ONE symbol, create an empty list. There is deliberately no TM remove/delete/update wrapper.
-  tmWatchlists: () => callAsync<TmWatchlists>('tm_watchlists', {}, () => fakeTm.watchlists()),
-  tmWatchlistAdd: (list: string, ticker: string) => callAsync<TmAddOutcome>('tm_watchlist_add', { list, ticker }, () => fakeTm.watchlistAdd(list, ticker)),
+  tmWatchlists: (priority?: TmPriority) => callAsync<TmWatchlists>('tm_watchlists', { priority: priority ?? null }, () => fakeTm.watchlists(priority)),
+  tmWatchlistAdd: (list: string, ticker: string, priority?: TmPriority) =>
+    callAsync<TmAddOutcome>('tm_watchlist_add', { list, ticker, priority: priority ?? null }, () => fakeTm.watchlistAdd(list, ticker, priority)),
   // M14 explain-only chat: one ask command. M14b: provider, address and key are saved by ONE command (llm_config_set); the key is never read back.
   // M16 B1: the reply streams as `explain:delta` events tagged with `requestId` (onDelta gets each piece); the returned AskOut is the authority.
-  explainAsk: (model: string, digest: string, question: string, history: { role: string; text: string }[], mode: string, requestId = 'r-compat', onDelta?: (t: string) => void): Promise<AskOut> =>
-    isTauri() ? askStreaming({ model, digest, question, history, mode, requestId }, onDelta) : fakeExplain.ask(model, digest, question, history, mode, requestId, onDelta),
+  // M20b: `lenses` = up to two lens ids (closed list, Rust holds the card text); anything else is refused (`bad_request`) before any request.
+  explainAsk: (model: string, digest: string, question: string, history: { role: string; text: string }[], mode: string, requestId = 'r-compat', onDelta?: (t: string) => void, lenses: string[] = []): Promise<AskOut> =>
+    isTauri() ? askStreaming({ model, digest, question, history, mode, requestId, lenses }, onDelta) : fakeExplain.ask(model, digest, question, history, mode, requestId, onDelta, lenses),
   /** Stop: ends the in-flight request with this id (a no-op for any other id). */
   explainStop: (requestId: string) => callAsync<void>('explain_stop', { requestId }, async () => fakeExplain.stop(requestId)),
   explainUsageSummary: (resetSession: boolean) => callAsync<UsageSummary>('explain_usage_summary', { resetSession }, async () => fakeExplain.summary(resetSession)),
@@ -1814,7 +2012,35 @@ export const api = {
   llmConfigClear: () => callAsync<void>('llm_config_clear', {}, async () => fakeLlm.clear()),
   llmTest: () => callAsync<void>('llm_test', {}, () => fakeExplain.test()),
   llmDetect: () => callAsync<LlmDetect>('llm_detect', {}, async () => ({ ...fakeLlm.detect })),
-  tmWatchlistCreate: (name: string) => callAsync<TmWatchlistMeta>('tm_watchlist_create', { name }, () => fakeTm.watchlistCreate(name)),
+  // M21: presence-only registry scan, an explicit version check, and the OpenRouter sign-in (the key never crosses to the webview: start returns a link and an id, status a word).
+  llmCliDetect: () => callAsync<CliDetect>('llm_cli_detect', {}, async () => fakeLlm.cliDetect()),
+  llmCliCheckVersion: (cliId: string) => callAsync<string>('llm_cli_check_version', { cliId }, async () => fakeLlm.checkVersion(cliId)),
+  llmOpenrouterLoginStart: () => callAsync<{ url: string; pending_id: string }>('llm_openrouter_login_start', {}, async () => fakeLlm.loginStart()),
+  llmOpenrouterLoginStatus: (pendingId: string) => callAsync<'pending' | 'done' | 'expired' | 'failed'>('llm_openrouter_login_status', { pendingId }, async () => fakeLlm.loginStatus(pendingId)),
+  // M18 R tools: local SQLite only. INFORMATIONAL: none of these commands touches an order; no other command takes R data.
+  riskGet: () => callAsync<RiskState>('risk_get', {}, async () => fakeRisk.get()),
+  riskSet: (settings: RiskSettingsIn) => callAsync<RiskSettings>('risk_set', { settings: stripEmpty(settings) }, async () => fakeRisk.set(settings)),
+  riskDraftPut: (draft: DraftIn) => callAsync<RiskDraft>('risk_draft_put', { draft: stripEmpty(draft) }, async () => fakeRisk.draftPut(draft)),
+  riskPromote: (promote: PromoteIn) => callAsync<TradeRisk>('risk_promote', { promote: stripEmpty(promote) }, async () => fakeRisk.promote(promote)),
+  riskStats: (accountMasked: string | null, trades: RiskTradeIn[]) =>
+    callAsync<RiskStatsOut>('risk_stats', { accountMasked, trades }, async () => fakeRisk.stats(accountMasked, trades)),
+  // M17 alerts: local SQLite only (in-memory fake outside Tauri). INFORM ONLY: none of these touches an order. No other command takes alert data.
+  alertList: () => callAsync<Alert[]>('alert_list', {}, async () => fakeAlerts.list()),
+  alertCreate: (alert: NewAlertRow) => callAsync<Alert>('alert_create', { alert }, async () => fakeAlerts.create(alert)),
+  alertUpdate: (id: number, patch: AlertPatch) => callAsync<Alert>('alert_update', { id, patch }, async () => fakeAlerts.update(id, patch)),
+  alertDelete: (id: number) => callAsync<void>('alert_delete', { id }, async () => fakeAlerts.delete(id)),
+  /** The transactional single-fire guard: `fired` with the stored event, or `skipped` with the reason. */
+  alertFire: (id: number, side: number, px: number, quoteAgeS: number, extra: { kind?: string; label?: string; missed?: boolean } = {}) =>
+    callAsync<FireOutcome>('alert_fire', { id, side, px, quoteAgeS, kind: extra.kind ?? null, label: extra.label ?? null, missed: extra.missed ?? null }, async () =>
+      fakeAlerts.fire(id, side, px, quoteAgeS, Date.now(), extra),
+    ),
+  /** Best-effort OS notification (text only). `shown` or `unavailable`. The in-app toast stays the primary delivery. */
+  alertNotify: (title: string, body: string) => callAsync<string>('alert_notify', { title, body }, async () => 'unavailable'),
+  alertEvents: (limit: number | null, unseenOnly: boolean) => callAsync<AlertEvent[]>('alert_events', { limit, unseenOnly }, async () => fakeAlerts.events(limit, unseenOnly)),
+  /** No ids = every unseen event. Returns how many changed. */
+  alertEventsAck: (ids: number[] | null) => callAsync<number>('alert_events_ack', { ids }, async () => fakeAlerts.ack(ids)),
+  tmWatchlistCreate: (name: string, priority?: TmPriority) =>
+    callAsync<TmWatchlistMeta>('tm_watchlist_create', { name, priority: priority ?? null }, () => fakeTm.watchlistCreate(name, priority)),
   rhCaptureTools: () =>
     call<RhCapture>('rh_capture_tools', {}, () => {
       throw new Error('rh_capture_tools is not available outside Tauri')

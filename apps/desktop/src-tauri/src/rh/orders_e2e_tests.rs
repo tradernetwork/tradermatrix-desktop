@@ -526,6 +526,30 @@ async fn approval_states_map_to_the_right_outcome() {
     }
 }
 
+/// M19 (Robinhood's own caveat): certain trades may still require approval even when the account's approvals are OFF, so `approval_id` handling must not
+/// depend on the review's `customer_approval_required`. Both directions, against the existing outcome mapping (mock server only, never a real order).
+#[tokio::test]
+async fn approval_id_is_handled_whether_or_not_the_review_said_approval_is_required() {
+    // review says NOT required (approvals off: the option review fixture), yet place answers with a pending approval: nothing is placed, the approval is surfaced
+    let h = harness(&ALL, |_, _, _, req| Some(structured(req, fx!("place_approval.json")))).await;
+    let rv = h.rh.review_option(opt_args()).await.unwrap();
+    assert_eq!(rv.customer_approval_required, Some(false));
+    let out = h.rh.place(&rv.review_id).await.unwrap();
+    assert!(matches!(&out, PlaceOutcome::AwaitingApproval { approval } if approval["approval_id"] == "appr-0001"), "{out:?}");
+    assert!(!matches!(out, PlaceOutcome::Placed { .. }));
+    assert_eq!(h.count("place_option_order"), 1);
+    h.clean();
+    // review says required (approvals on, the equity review fixture), yet place answers with a plain order: it is placed and no approval is invented
+    let h = harness(&ALL, |_, _, _, req| placed(req)).await;
+    let rv = h.rh.review_equity(eq_args()).await.unwrap();
+    assert_eq!(rv.customer_approval_required, Some(true));
+    let out = h.rh.place(&rv.review_id).await.unwrap();
+    let j = serde_json::to_value(&out).unwrap();
+    assert_eq!(j["kind"], "placed");
+    assert!(j.get("approval").is_none());
+    h.clean();
+}
+
 /// R2b: server-side failures that may have acted are Unknown, never Rejected; validation-style errors stay Rejected.
 #[tokio::test]
 async fn ambiguous_place_tool_errors_are_unknown_and_clear_rejections_stay_rejected() {

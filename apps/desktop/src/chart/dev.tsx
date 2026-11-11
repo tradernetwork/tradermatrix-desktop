@@ -8,13 +8,18 @@
  * M12 desk overlay (SMA 50/200 + key Fib are on by default): `&desk=0` hides every layer, `&fib=off|key|all`, `&fvg=1`, `&atr=0|1|auto` (1 = on; auto needs `&pos=long|short` to
  * fake an open position in the symbol), `&sma=none` or `&sma=20,50,200`, `&narrow=1`, `&lb=120` (lookback override). Example: `chart-dev.html?desk=1&fib=all&fvg=1&atr=1&tf=15m`.
  * M13: `&ladder=1` turns the right-gutter level ladder on (and the fake TM overlays, unless `&tm=0`): `chart-dev.html?desk=1&ladder=1&fib=all&atr=1&fvg=1&tm=1`.
+ * M17b: `&alerts=1` seeds alerts on the fake backend (above and below the price, two 4 px apart so they stack, one snoozed, and one by-reference alert on Apex rank 1, which also
+ * turns the fake TM overlays on). Right-click for "Alert at" / "Alert on this level", Alt+A over the chart, drag the bell chip. No quote poller runs here, so nothing fires.
  * The candle store is the in-memory fake: the toolbar shows the running "N candles stored" count.
  */
 import '../styles/app.css'
 import { StrictMode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { useRhStore } from '../stores/rh'
-import { fake, fakePriceAt, fakeRh, fakeTm, isTauri, TM_KEY_SLOT } from '../lib/api'
+import { api, fake, fakePriceAt, fakeRh, fakeTm, isTauri, TM_KEY_SLOT } from '../lib/api'
+import { useAlertsStore } from '../stores/alerts'
+import { AlertToast } from '../workspace/AlertToast'
+import { AskAboutMenu } from '../workspace/AskAboutMenu'
 import { useTmStore } from '../stores/tm'
 import type { ChartOption } from './optionChart'
 import { VOLUME_SETTING_KEY } from './volumeMode'
@@ -47,7 +52,8 @@ if (!isTauri()) {
   setInterval(wobble, 2000)
 }
 
-if ((q.get('tm') === '1' || (q.get('ladder') === '1' && q.get('tm') !== '0')) && !isTauri()) {
+const alertsDev = q.get('alerts') === '1'
+if ((q.get('tm') === '1' || alertsDev || (q.get('ladder') === '1' && q.get('tm') !== '0')) && !isTauri()) {
   fake.secrets.add(TM_KEY_SLOT) // presence flag only: the fake backend never sees a key
   fakeTm.spotFor = (s) => fakePriceAt(s, Date.now())
   useTmStore.setState({
@@ -88,6 +94,25 @@ if (!isTauri()) {
   }
 }
 
+async function seedAlerts(): Promise<void> {
+  const st = useAlertsStore.getState()
+  const p = fakePriceAt(symbol, Date.now())
+  const px = (k: number) => Number((p * k).toFixed(2))
+  await st.createPriceAlert({ symbol, price: px(1.02), dir: 'up' })
+  await st.createPriceAlert({ symbol, price: px(0.97), dir: 'down' })
+  await st.createPriceAlert({ symbol, price: px(0.9703), dir: 'down' })
+  const snoozed = await st.createPriceAlert({ symbol, price: px(1.05), dir: 'either' })
+  if (snoozed) await st.snooze(snoozed.id, '1h')
+  try {
+    const ax = await api.tmApexLevels(symbol)
+    const l = ax.levels.find((x) => x.rank === 1 && typeof x.strike === 'number')
+    if (l) await st.createPriceAlert({ symbol, price: l.strike!, dir: 'either', ref: { ref_kind: 'apex', ref_param: 'rank:1' } })
+  } catch {
+    /* no fake apex */
+  }
+}
+if (alertsDev && !isTauri()) void seedAlerts()
+
 const OPT_OK = '0f3c2a1e-5b7d-4c9a-8e21-3a4b5c6d7e8f'
 const OPT_BAD = '00000000-0000-0000-0000-000000000000'
 const optParam = q.get('opt')
@@ -99,6 +124,8 @@ function Dev() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <ChartPane symbol={startOption ? 'AAPL' : symbol} initialTimeframe={tf} option={option} onOptionBack={() => setOption(null)} />
+      <AskAboutMenu />
+      <AlertToast />
     </div>
   )
 }

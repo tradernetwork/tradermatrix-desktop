@@ -16,6 +16,8 @@ TraderMatrix Desktop **can place real orders** on a real Robinhood account. That
 
 - **The webview never builds a tool call.** It sends typed intents to Rust. Rust validates strictly (unknown fields are rejected), calls the broker review tool, stores the review, and places that exact review once.
 - **No raw or write passthrough command exists.** A test pins the exact list of exposed commands.
+- **Alerts and R tools never place orders.** Alerts only record events and show a toast, sound or notification. The size helper only fills a quantity field. A report showing either path reaching an order is high severity.
+- **Local agent CLIs are text-only.** A detected CLI cannot run without a vetted recipe; the prompt goes on stdin, the environment is allowlisted and tools are disabled.
 - **Secrets stay in the vault.** Passphrase through Argon2id, sealed with XChaCha20-Poly1305, one local file, unlocked once per launch. No command returns a stored secret to the webview. Secret commands from the webview touch only the TraderMatrix key slot.
 - **The webview CSP allows `'self'` and IPC only.** All network access and all tokens live in Rust. No external fonts or scripts.
 - **No order caps by design.** The absence of size limits or a kill switch is a documented product decision, not a vulnerability. A report that amounts to "there is no cap" will be closed. A report that shows a way around the review-then-place flow will not.

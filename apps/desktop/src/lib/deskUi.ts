@@ -3,11 +3,12 @@
  * They only read what the panes already loaded (rh and orders stores); nothing here calls the backend.
  * Unknown is `null` and prints `-`, never 0.
  */
-import type { RhApproval, RhOptionPosition, RhOrder, RhPortfolio, RhPosition, RhQuote, TmStatus, VaultStatus } from './api'
+import type { QuotaStatus, RhApproval, RhOptionPosition, RhOrder, RhPortfolio, RhPosition, RhQuote, TmStatus, VaultStatus } from './api'
 import { fmtMoney, fmtNum, fmtPct, fmtPrice, fmtQty, pnlClass, positionRow } from './format'
 import { isCancelable } from './orderUi'
 import { optionPnl } from './optionPositions'
 import { classifyTmError } from './tmUi'
+import { isPaused, untilText } from './tmQuota'
 
 const fin = (n: number | null | undefined): n is number => typeof n === 'number' && Number.isFinite(n)
 
@@ -114,6 +115,9 @@ export interface ChipInput {
   /** human_must_approve_trades for that account: true ON, false OFF, null/undefined unknown. */
   approvalOn: boolean | null | undefined
   tm: TmStatus | null
+  /** M20a: the local TraderMatrix call budget. When the day is used up the header says "TM paused until HH:MM". Omitted = no chip. */
+  quota?: QuotaStatus | null
+  now?: number
   vault: VaultStatus | null
   fake: boolean
 }
@@ -140,6 +144,10 @@ export function deskChips(i: ChipInput): DeskChip[] {
   else if (!i.tm || !i.tm.key_present) out.push({ key: 'tm', text: 'TM key: missing', tone: 'muted' })
   else if (kind === 'rejected') out.push({ key: 'tm', text: 'TM key: rejected', tone: 'bad' })
   else out.push({ key: 'tm', text: 'TM key: ok', tone: 'ok' })
+  const now = i.now ?? Date.now()
+  if (i.quota && isPaused(i.quota, now)) {
+    out.push({ key: 'tm-paused', text: `TM paused until ${untilText(i.quota.paused_until_ms ?? now, now)}`, tone: 'warn', title: `Today's TraderMatrix budget is used (${Math.min(i.quota.used, i.quota.limit)} of ${i.quota.limit} calls). TM data shows - until then.` })
+  }
 
   if (!i.vault) out.push({ key: 'vault', text: 'Vault: -', tone: 'muted' })
   else if (i.vault.backend !== 'vault') out.push({ key: 'vault', text: `Secrets: ${i.vault.backend}`, tone: 'ok' })

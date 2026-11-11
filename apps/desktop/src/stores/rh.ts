@@ -20,6 +20,7 @@ import { isEquityTicker } from '../lib/symbols'
 import { OPTION_ID_RE, type ChartOption } from '../chart/optionChart'
 import { SnapshotSampler } from '../lib/snapshots'
 import { QuotePoller } from './quotePoller'
+import { useAlertsStore } from './alerts'
 
 /** Quote snapshots go to the local database at most once per symbol per 60 s while the app runs (fire-and-forget). */
 const quoteSampler = new SnapshotSampler((kind, key, json) => api.snapshotStore(kind, key, json))
@@ -135,7 +136,8 @@ export const useRhStore = create<RhState>((set, get) => {
   let ordersSeq = 0
   const poller = new QuotePoller({
     fetch: (symbols) => api.rhQuotes(symbols),
-    onQuotes: (list) =>
+    hasArmedAlerts: () => useAlertsStore.getState().armedCount() > 0,
+    onQuotes: (list, meta) => {
       set((s) => {
         const quotes = { ...s.quotes }
         for (const q of list) {
@@ -143,7 +145,10 @@ export const useRhStore = create<RhState>((set, get) => {
           quoteSampler.offer('quote', q.symbol, q)
         }
         return { quotes, quoteError: '' }
-      }),
+      })
+      // the ONE alert subscriber: evaluates only symbols that have alerts; errors never reach the quote path
+      void useAlertsStore.getState().onQuotes(list, meta).catch((e) => console.warn('alert evaluation failed (ignored)', e))
+    },
     onError: (m) => set({ quoteError: m }),
   })
   if (typeof document !== 'undefined') {

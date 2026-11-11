@@ -4,6 +4,7 @@ import { maskAccount } from '../lib/format'
 import { exportMessage } from '../lib/journalUi'
 import { validateNoteInput } from '../lib/journalRules'
 import { useRhStore } from './rh'
+import { useRiskStore } from './risk'
 
 export interface NoteInput {
   body: string
@@ -117,6 +118,8 @@ export const useJournalStore = create<JournalState>((set, get) => {
         const [pnl, t] = await Promise.all([api.rhRealizedPnl(acct, span, null), api.rhPnlTrades(acct, span, null, null)])
         if (my !== pnlSeq) return
         set({ pnl, trades: t.trades, tradesCursor: t.next_cursor, pnlAccount: acct, pnlLoading: false })
+        // R tools (M18): join the stored planned risk to these trades (local data; informational only)
+        void useRiskStore.getState().refreshStats(t.trades, maskAccount(acct))
       } catch (e) {
         if (my === pnlSeq) set({ pnlLoading: false, pnlError: msg(e) })
       }
@@ -134,6 +137,7 @@ export const useJournalStore = create<JournalState>((set, get) => {
         if (my !== pnlSeq) return
         const have = new Set(get().trades.map((x) => x.trade_key))
         set({ trades: [...get().trades, ...t.trades.filter((x) => !have.has(x.trade_key))], tradesCursor: t.next_cursor, pnlLoading: false })
+        void useRiskStore.getState().refreshStats(get().trades, maskAccount(acct))
       } catch (e) {
         if (my === pnlSeq) set({ pnlLoading: false, pnlError: msg(e) })
       }

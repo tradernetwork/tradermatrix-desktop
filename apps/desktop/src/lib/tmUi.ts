@@ -2,6 +2,7 @@
 import { fmtNum } from './format'
 import type { TmBand, TmSnapshot, TmStatus } from './api'
 import { fmtLevel } from '../chart/tmOverlay'
+import { degradedText } from './tmQuota'
 
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
@@ -47,10 +48,13 @@ const human = (s: string | null | undefined): string => (s ? s.replace(/_/g, ' '
 
 // ---- errors ----
 
-export type TmErrorKind = 'key_missing' | 'locked' | 'rejected' | 'tier' | 'transport' | 'other'
+/** `paused` / `throttled`: the LOCAL call budget held the call back (nothing was sent): a degraded state, not a failure. */
+export type TmErrorKind = 'key_missing' | 'locked' | 'rejected' | 'paused' | 'throttled' | 'tier' | 'transport' | 'other'
 
 export function classifyTmError(msg: string): TmErrorKind {
   const m = msg.toLowerCase()
+  if (m.includes('tm paused until')) return 'paused'
+  if (m.includes('tm throttled until')) return 'throttled'
   if (m.includes('key not set')) return 'key_missing'
   if (m.includes('vault locked')) return 'locked'
   if (m.includes('rejected the key')) return 'rejected'
@@ -71,6 +75,9 @@ export function tmErrorText(msg: string): string {
       return 'The secret vault is locked. Unlock it to use TraderMatrix.'
     case 'rejected':
       return 'TraderMatrix rejected the key (invalid or revoked). Replace it with the TM key button in the toolbar.'
+    case 'paused':
+    case 'throttled':
+      return degradedText(msg)
     case 'transport':
       return `Could not reach TraderMatrix (${strip(msg)}). Try Refresh.`
     case 'tier':

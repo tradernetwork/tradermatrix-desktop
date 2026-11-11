@@ -20,9 +20,9 @@ License tally: MIT (9), Apache-2.0 OR MIT (1), Apache-2.0 (1)
 | scheduler | 0.28.0 | MIT | https://react.dev/ |
 | zustand | 5.1.0 | MIT | https://github.com/pmndrs/zustand |
 
-## Rust (core, x86_64-unknown-linux-gnu) : 442 crates
+## Rust (core, x86_64-unknown-linux-gnu) : 448 crates
 
-License tally: MIT OR Apache-2.0 (201), MIT (108), Apache-2.0 OR MIT (57), Unicode-3.0 (18), MIT/Apache-2.0 (7), Unlicense OR MIT (5), MPL-2.0 (5), BSD-3-Clause (3), Apache-2.0/MIT (3), Zlib (3), Apache-2.0 OR ISC OR MIT (3), ISC (3), (MIT OR Apache-2.0) AND Unicode-3.0 (3), Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT (2), MIT OR Apache-2.0 OR Zlib (2), MIT OR Zlib OR Apache-2.0 (2), Unlicense/MIT (2), Apache-2.0 (2), 0BSD OR MIT OR Apache-2.0 (1), ISC AND (Apache-2.0 OR ISC) (1), ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) (1), BSD-3-Clause AND MIT (1), BSD-3-Clause/MIT (1), Apache-2.0 AND MIT (1), CC0-1.0 OR MIT-0 OR Apache-2.0 (1), Apache-2.0 / MIT (1), Apache-2.0 AND ISC (1), Apache-2.0 OR BSL-1.0 (1), Zlib OR Apache-2.0 OR MIT (1), Apache-2.0 OR BSL-1.0 OR MIT (1), BSD-2-Clause OR Apache-2.0 OR MIT (1)
+License tally: MIT OR Apache-2.0 (202), MIT (112), Apache-2.0 OR MIT (58), Unicode-3.0 (18), MIT/Apache-2.0 (7), Unlicense OR MIT (5), MPL-2.0 (5), BSD-3-Clause (3), Apache-2.0/MIT (3), Zlib (3), Apache-2.0 OR ISC OR MIT (3), ISC (3), (MIT OR Apache-2.0) AND Unicode-3.0 (3), Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT (2), MIT OR Apache-2.0 OR Zlib (2), MIT OR Zlib OR Apache-2.0 (2), Unlicense/MIT (2), Apache-2.0 (2), 0BSD OR MIT OR Apache-2.0 (1), ISC AND (Apache-2.0 OR ISC) (1), ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) (1), BSD-3-Clause AND MIT (1), BSD-3-Clause/MIT (1), Apache-2.0 AND MIT (1), CC0-1.0 OR MIT-0 OR Apache-2.0 (1), Apache-2.0 / MIT (1), Apache-2.0 AND ISC (1), Apache-2.0 OR BSL-1.0 (1), Zlib OR Apache-2.0 OR MIT (1), Apache-2.0 OR BSL-1.0 OR MIT (1), BSD-2-Clause OR Apache-2.0 OR MIT (1)
 
 | Package | Version | License | Source |
 |---|---|---|---|
@@ -246,6 +246,7 @@ License tally: MIT OR Apache-2.0 (201), MIT (108), Apache-2.0 OR MIT (57), Unico
 | muda | 0.20.0 | Apache-2.0 OR MIT | https://github.com/tauri-apps/muda |
 | new_debug_unreachable | 1.0.6 | MIT | https://github.com/mbrubeck/rust-debug-unreachable |
 | nix | 0.29.0 | MIT | https://github.com/nix-rust/nix |
+| notify-rust | 4.19.0 | MIT OR Apache-2.0 | https://github.com/hoodie/notify-rust |
 | num | 0.4.3 | MIT OR Apache-2.0 | https://github.com/rust-num/num |
 | num-bigint | 0.4.8 | MIT OR Apache-2.0 | https://github.com/rust-num/num-bigint |
 | num-bigint-dig | 0.8.6 | MIT/Apache-2.0 | https://github.com/dignifiedquire/num-bigint |
@@ -379,6 +380,7 @@ License tally: MIT OR Apache-2.0 (201), MIT (108), Apache-2.0 OR MIT (57), Unico
 | tauri | 2.12.5 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | tauri-codegen | 2.7.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | tauri-macros | 2.7.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+| tauri-plugin-notification | 2.8.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
 | tauri-plugin-opener | 2.7.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
 | tauri-plugin-window-state | 2.5.0 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
 | tauri-runtime | 2.12.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
@@ -447,10 +449,13 @@ License tally: MIT OR Apache-2.0 (201), MIT (108), Apache-2.0 OR MIT (57), Unico
 | yoke-derive | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zbus | 4.4.0 | MIT | https://github.com/dbus2/zbus/ |
 | zbus | 5.19.0 | MIT | https://github.com/z-galaxy/zbus/ |
+| zbus | 6.2.1 | MIT | https://github.com/z-galaxy/zbus/ |
 | zbus_macros | 4.4.0 | MIT | https://github.com/dbus2/zbus/ |
 | zbus_macros | 5.19.0 | MIT | https://github.com/z-galaxy/zbus/ |
+| zbus_macros | 6.2.1 | MIT | https://github.com/z-galaxy/zbus/ |
 | zbus_names | 3.0.0 | MIT | https://github.com/dbus2/zbus/ |
 | zbus_names | 4.3.5 | MIT | https://github.com/z-galaxy/zbus/ |
+| zbus_utils | 6.1.0 | MIT | https://github.com/z-galaxy/zbus/ |
 | zcheapstr | 1.2.0 | MIT | https://github.com/z-galaxy/zcheapstr/ |
 | zerocopy | 0.8.63 | BSD-2-Clause OR Apache-2.0 OR MIT | https://github.com/google/zerocopy |
 | zerofrom | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
@@ -462,6 +467,7 @@ License tally: MIT OR Apache-2.0 (201), MIT (108), Apache-2.0 OR MIT (57), Unico
 | zerovec-derive | 0.11.7 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zlib-rs | 0.6.8 | Zlib | https://github.com/trifectatechfoundation/zlib-rs |
 | zmij | 1.0.23 | MIT | https://github.com/dtolnay/zmij |
+| zruntime | 0.2.2 | MIT | https://github.com/z-galaxy/zruntime |
 | zvariant | 4.2.0 | MIT | https://github.com/dbus2/zbus/ |
 | zvariant | 5.15.1 | MIT | https://github.com/z-galaxy/zbus/ |
 | zvariant_derive | 4.2.0 | MIT | https://github.com/dbus2/zbus/ |
@@ -475,5 +481,7 @@ License tally: MIT OR Apache-2.0 (201), MIT (108), Apache-2.0 OR MIT (57), Unico
 |---|---|---|
 | Inter (400, 500, 600, 700) | SIL OFL 1.1 | LICENSES/OFL-Inter.txt |
 | JetBrains Mono (400, 500, 700) | SIL OFL 1.1 | LICENSES/OFL-JetBrainsMono.txt |
+
+Only the Linux build is verified, so the Rust table is the x86_64-unknown-linux-gnu closure. Platform-specific notification crates pulled in by tauri-plugin-notification on other targets (mac-notification-sys MIT/Apache-2.0, tauri-winrt-notification MIT OR Apache-2.0, windows-version MIT OR Apache-2.0, objc2-user-notifications Zlib OR Apache-2.0 OR MIT) are permissively licensed and are not listed above.
 
 Full license texts: see each project's repository; Apache-2.0 text for KLineChart is in LICENSES/Apache-2.0.txt, font texts in LICENSES/OFL-*.txt.

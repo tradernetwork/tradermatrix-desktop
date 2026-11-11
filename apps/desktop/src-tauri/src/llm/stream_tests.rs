@@ -41,10 +41,10 @@ fn finish(usage: bool) -> String {
 const DONE: &str = "data: [DONE]\n\n";
 
 /// One scripted streaming response: `(delay before the write in ms, bytes)`; `hold` keeps the connection open and silent at the end.
-struct Slow {
-    addr: SocketAddr,
-    reqs: Arc<Mutex<Vec<Req>>>,
-    write_failed: Arc<AtomicBool>,
+pub(super) struct Slow {
+    pub(super) addr: SocketAddr,
+    pub(super) reqs: Arc<Mutex<Vec<Req>>>,
+    pub(super) write_failed: Arc<AtomicBool>,
     task: tokio::task::JoinHandle<()>,
 }
 impl Drop for Slow {
@@ -53,15 +53,15 @@ impl Drop for Slow {
     }
 }
 impl Slow {
-    fn url(&self) -> Url {
+    pub(super) fn url(&self) -> Url {
         Url::parse(&format!("http://{}/api/v1", self.addr)).unwrap()
     }
-    fn count(&self) -> usize {
+    pub(super) fn count(&self) -> usize {
         self.reqs.lock().unwrap().len()
     }
 }
 
-async fn slow(content_type: &'static str, steps: Vec<(u64, String)>, hold: bool) -> Slow {
+pub(super) async fn slow(content_type: &'static str, steps: Vec<(u64, String)>, hold: bool) -> Slow {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let reqs: Arc<Mutex<Vec<Req>>> = Arc::new(Mutex::new(vec![]));
@@ -132,7 +132,7 @@ fn collector() -> (Emit, Log) {
     (emit, log)
 }
 fn params(q: &str) -> StreamParams {
-    StreamParams { model: MODEL.into(), digest: DIGEST.into(), question: q.into(), history: vec![], mode: "beginner".into() }
+    StreamParams { model: MODEL.into(), digest: DIGEST.into(), question: q.into(), history: vec![], mode: "beginner".into(), lenses: vec![] }
 }
 fn deltas(log: &Log) -> Vec<String> {
     log.lock().unwrap().iter().filter_map(|e| if let ChatEvent::Delta { text, .. } = e { Some(text.clone()) } else { None }).collect()
@@ -428,8 +428,8 @@ async fn the_local_cli_cannot_stream_so_it_answers_once_with_an_estimated_usage(
     std::fs::write(&f, "#!/bin/sh\ncat >/dev/null\necho 'CLI answer here'\n").unwrap();
     std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap();
     let st: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
-    config::set_config(&*st, "claude_cli", None, None, None, None).unwrap();
-    let s = Arc::new(LlmState::for_test(st, Duration::from_secs(5)).with_cli(&d.to_string_lossy(), Duration::from_secs(10)));
+    config::set_config_with_gate(&*st, "claude_cli", None, None, None, None, None, super::cli_registry::Gate { public: false, experimental: false, advanced: false }).unwrap();
+    let s = Arc::new(LlmState::for_test(st, Duration::from_secs(5)).with_cli(&d.to_string_lossy(), Duration::from_secs(10)).with_public(false));
     let (out, log) = run(&s, "req-21", "q").await;
     assert_eq!(out.end, End::Done);
     assert_eq!(out.text, "CLI answer here");

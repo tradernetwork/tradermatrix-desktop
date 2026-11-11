@@ -3,13 +3,17 @@
  * missing, in either direction or both. This module has no removal path: it calls only list/add/create wrappers
  * (a test greps this file). TM notes never arrive here (the Rust core drops them) and are never sent.
  *
- * Pacing: TM adds are one symbol per call (the Rust limiter paces them at 2/s), with progress and a Cancel honored
- * between symbols; Robinhood adds go in chunks of 50. A list that does not exist yet is created only when Apply runs
+ * Pacing: TM adds are one symbol per call at BACKGROUND priority (M20a: the Rust call budget paces them at the per-minute limit, keeps
+ * 2 slots a minute free for the symbol on screen, and drops them under 20% of the day), with progress and a Cancel honored
+ * between symbols. When the daily budget runs out the run stops with "N of M done, paused: TM daily budget, resume tomorrow" and a re-run
+ * does only what is left. A PREVIEW or otherwise truncated TM list is never diffed (no adds are computed from a cut list).
+ * Robinhood adds go in chunks of 50. A list that does not exist yet is created only when Apply runs
  * and only when something is going to be added to it.
  */
 import { create } from 'zustand'
 import { api, isOptionsList, type RhWatchlist, type TmWatchlist } from '../lib/api'
 import { classifyTmError, tmErrorText } from '../lib/tmUi'
+import { degradedText } from '../lib/tmQuota'
 import { validateListName, watchlistWritable } from '../lib/watchRules'
 import {
   actionsFor,
@@ -66,6 +70,8 @@ interface SyncState {
   tmLimits: TmLimits
   /** Raw message ('' = TM loaded fine). Display with tmErrorText(). */
   tmError: string
+  /** TM answered with a preview / cut-short list: nothing is compared until the full lists are readable. */
+  tmTruncated: boolean
   rhLists: RhWatchlist[]
   rhError: string
   tmSel: Sel
@@ -90,6 +96,7 @@ interface SyncState {
 }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
+export const TRUNCATED_TEXT = 'TraderMatrix sent a preview (free tier: lists cut to their first items), so the comparison is off. Upgrade for full lists, then press Refresh.'
 const NO_LIMITS: TmLimits = { tickers_per_list: null, tickers_across_all_lists: null, max_lists: null }
 const blankResult = (): SyncResult => ({ rhAdded: [], tmAdded: [], already: [], failed: [], skipped: [], notRun: 0, cancelled: false, stopped: '', aborted: '', created: [] })
 
@@ -99,6 +106,7 @@ const initial = () => ({
   tmLists: [] as TmWatchlist[],
   tmLimits: NO_LIMITS,
   tmError: '',
+  tmTruncated: false,
   rhLists: [] as RhWatchlist[],
   rhError: '',
   tmSel: '' as Sel,
@@ -138,8 +146,10 @@ export const useWatchSyncStore = create<SyncState>((set, get) => {
       patch.tmLists = tm.value.lists
       patch.tmLimits = { tickers_per_list: tm.value.tickers_per_list, tickers_across_all_lists: tm.value.tickers_across_all_lists, max_lists: tm.value.max_lists }
       patch.tmError = ''
+      patch.tmTruncated = tm.value.truncated === true
     } else {
       patch.tmError = msg(tm.reason)
+      patch.tmTruncated = false
     }
     if (rh.status === 'fulfilled') {
       patch.rhLists = rh.value.filter((w) => watchlistWritable(w) && !isOptionsList(w))
@@ -152,10 +162,15 @@ export const useWatchSyncStore = create<SyncState>((set, get) => {
 
   const refreshPlan = async (): Promise<void> => {
     const seq = ++planSeq
-    const { tmSel, rhSel, tmLists, tmLimits, tmError } = get()
+    const { tmSel, rhSel, tmLists, tmLimits, tmError, tmTruncated } = get()
     const tmList = tmSel !== '' && tmSel !== 'new' ? tmLists.find((l) => String(l.id) === tmSel) : undefined
     const rhKnown = rhSel === 'new' || get().rhLists.some((l) => l.id === rhSel)
     if (tmSel === '' || rhSel === '' || tmError !== '' || (tmSel !== 'new' && !tmList) || !rhKnown) {
+      set({ plan: null, planLoading: false, planError: '' })
+      return
+    }
+    // A preview (free tier) or a list holding fewer rows than its own count is NOT the whole list: computing adds from it would be wrong.
+    if (tmTruncated || (tmList && tmList.ticker_count > tmList.tickers.length)) {
       set({ plan: null, planLoading: false, planError: '' })
       return
     }
@@ -239,7 +254,7 @@ export const useWatchSyncStore = create<SyncState>((set, get) => {
 
     apply: async () => {
       const s0 = get()
-      if (s0.phase === 'applying' || !s0.plan || s0.tmSel === '' || s0.rhSel === '' || (s0.tmSel === 'new' && s0.rhSel === 'new')) return
+      if (s0.phase === 'applying' || s0.tmTruncated || !s0.plan || s0.tmSel === '' || s0.rhSel === '' || (s0.tmSel === 'new' && s0.rhSel === 'new')) return
       cancelFlag = false
       const { plan, direction } = s0
       const { addToRh, addToTm } = actionsFor(plan, direction)
@@ -273,7 +288,7 @@ export const useWatchSyncStore = create<SyncState>((set, get) => {
       } else if (s0.tmSel === 'new' && addToTm.length > 0) {
         const name = (rhSource?.display_name ?? '').trim()
         try {
-          const m = await api.tmWatchlistCreate(name)
+          const m = await api.tmWatchlistCreate(name, 'background')
           tmTarget = String(m.id)
           res.created.push(`TraderMatrix: ${m.name}`)
           set({ tmSel: tmTarget })
@@ -318,7 +333,7 @@ export const useWatchSyncStore = create<SyncState>((set, get) => {
               set({ progress: { side: 'tm', done: i, total: addToTm.length } })
               const symbol = addToTm[i]
               try {
-                const o = await api.tmWatchlistAdd(tmTarget, symbol)
+                const o = await api.tmWatchlistAdd(tmTarget, symbol, 'background')
                 if (o.added) res.tmAdded.push(symbol)
                 else res.already.push(symbol)
                 fails = 0
@@ -327,7 +342,15 @@ export const useWatchSyncStore = create<SyncState>((set, get) => {
                 res.failed.push({ symbol, side: 'tm', error: m })
                 fails += 1
                 const kind = classifyTmError(m)
-                if (kind === 'key_missing' || kind === 'locked' || kind === 'rejected') {
+                if (kind === 'paused' || kind === 'throttled') {
+                  // The LOCAL budget held this call back: nothing was sent, so it is not a failure of the symbol. Stop and say how far it got.
+                  res.failed.pop()
+                  res.notRun += 1 // this symbol was never sent either (the shared count below covers the ones after it)
+                  fails = 0
+                  const done = res.tmAdded.length + res.already.length
+                  const day = kind === 'paused'
+                  res.stopped = `${done} of ${addToTm.length} done, paused: ${day ? 'TM daily budget' : 'TM per-minute limit'}, ${day ? 'resume tomorrow' : 'run Apply again in a minute'}. ${degradedText(m)}. What is already added is skipped on the next run.`
+                } else if (kind === 'key_missing' || kind === 'locked' || kind === 'rejected') {
                   res.stopped = `Stopped: ${tmErrorText(m)}`
                 } else if (fails >= MAX_TM_FAILS_IN_A_ROW) {
                   res.stopped = `Stopped after ${MAX_TM_FAILS_IN_A_ROW} TraderMatrix failures in a row. Last error: ${tmErrorText(m)}`

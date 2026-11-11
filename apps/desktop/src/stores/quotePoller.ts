@@ -18,9 +18,19 @@ export function callsPerSecond(symbols: number, intervalMs = POLL_MS): number {
 /** Who gets quotes first when the list is cut at the cap: the ticket symbol, then positions, the chart, then the watchlist. */
 export const OWNER_PRIORITY = ['ticket', 'positions', 'chart', 'watchlist'] as const
 
+/** While the window is hidden and at least one alert is armed, the poller keeps going at this pace (webview timer throttling when hidden is unverified). */
+export const HIDDEN_ARMED_MS = 15_000
+
+export interface QuoteMeta {
+  /** Epoch ms when the fetch that produced these quotes began. */
+  startedAt: number
+}
+
 export interface PollerOptions {
   fetch: (symbols: string[]) => Promise<RhQuote[]>
-  onQuotes: (q: RhQuote[]) => void
+  onQuotes: (q: RhQuote[], meta: QuoteMeta) => void
+  /** True while at least one alert is armed: the poller then also runs (every 15 s) while the window is hidden. */
+  hasArmedAlerts?: () => boolean
   onError?: (message: string) => void
   intervalMs?: number
   isHidden?: () => boolean
@@ -39,6 +49,7 @@ export class QuotePoller {
   /** Bumped by clear(): a response that belongs to an older epoch is dropped. */
   private epoch = 0
   private kick: ReturnType<typeof setTimeout> | null = null
+  private lastFetchAt = Number.NEGATIVE_INFINITY
   private readonly o: Required<Omit<PollerOptions, 'onError'>> & Pick<PollerOptions, 'onError'>
 
   constructor(opts: PollerOptions) {
@@ -46,6 +57,7 @@ export class QuotePoller {
       intervalMs: POLL_MS,
       maxSymbols: MAX_POLL_SYMBOLS,
       isHidden: () => typeof document !== 'undefined' && document.hidden,
+      hasArmedAlerts: () => false,
       ...opts,
     }
   }
@@ -69,6 +81,11 @@ export class QuotePoller {
   /** More symbols are wanted than the cap allows (the tail is not quoted). */
   get truncated(): boolean {
     return this.all().length > this.o.maxSymbols
+  }
+
+  /** The pace right now: 15 s while hidden with an armed alert, else the normal interval. */
+  currentIntervalMs(): number {
+    return this.o.isHidden() && this.o.hasArmedAlerts() ? HIDDEN_ARMED_MS : this.o.intervalMs
   }
 
   get running(): boolean {
@@ -115,12 +132,17 @@ export class QuotePoller {
   /** Returns true when a fetch was made. */
   async tick(): Promise<boolean> {
     const syms = this.symbols()
-    if (this.inflight || syms.length === 0 || this.o.isHidden()) return false
+    if (this.inflight || syms.length === 0) return false
+    const started = Date.now()
+    if (this.o.isHidden()) {
+      if (!this.o.hasArmedAlerts() || started - this.lastFetchAt < HIDDEN_ARMED_MS) return false
+    }
+    this.lastFetchAt = started
     this.inflight = true
     const epoch = this.epoch
     try {
       const q = await this.o.fetch(syms)
-      if (epoch === this.epoch) this.o.onQuotes(q)
+      if (epoch === this.epoch) this.o.onQuotes(q, { startedAt: started })
     } catch (e) {
       if (epoch === this.epoch) this.o.onError?.(e instanceof Error ? e.message : String(e))
     } finally {

@@ -2,6 +2,7 @@ import type { IDockviewPanelProps } from 'dockview-react'
 import { useEffect, useState, type ComponentType } from 'react'
 import { ChartPane } from '../chart/ChartPane'
 import { useRhStore } from '../stores/rh'
+import { AlertsPane } from './AlertsPane'
 import { ExplainPane } from './ExplainPane'
 import { JournalPane } from './JournalPane'
 import { OrdersPane } from './OrdersPane'
@@ -12,6 +13,7 @@ import { useLayoutStore } from './layoutStore'
 import { savedChartSymbol } from './panelParams'
 import { PANEL_TITLES, type PanelId } from './panelIds'
 import { PositionsPane } from './PositionsPane'
+import { RStatsPane } from './RStatsPane'
 import { TmInsightPane } from './TmInsightPane'
 import { WatchlistPane } from './WatchlistPane'
 
@@ -84,6 +86,8 @@ const RAW: Record<PanelId, { title: string; component: ComponentType }> = {
   journal: { title: PANEL_TITLES.journal, component: JournalPane },
   tm: { title: PANEL_TITLES.tm, component: TmInsightPane },
   explain: { title: PANEL_TITLES.explain, component: ExplainPane },
+  alerts: { title: PANEL_TITLES.alerts, component: AlertsPane },
+  rstats: { title: PANEL_TITLES.rstats, component: RStatsPane },
 }
 
 export const PANELS: Record<PanelId, { title: string; component: ComponentType }> = Object.fromEntries(

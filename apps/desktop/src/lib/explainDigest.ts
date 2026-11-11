@@ -82,6 +82,20 @@ export interface SectionsState {
   trade?: { symbol: string | null; side: string | null; qty: number | null; price: number | null; pnl: number | null; holdDays: number | null; agoDays: number | null } | null
 }
 
+/** R-multiple statistics for the optional RSTATS line (M18). Numbers only: no symbol, note or account field exists here. */
+export interface RStatsDigest {
+  n: number | null
+  nWithR: number | null
+  expectancyR: number | null
+  winRate: number | null
+  avgWinR: number | null
+  avgLossR: number | null
+  /** null below 30 trades or with a zero spread (printed NA). */
+  sqn: number | null
+  /** Sum of planned R across open positions, percent of equity. */
+  heatPct: number | null
+}
+
 export interface ExplainState {
   chart: ChartDigest | null
   overlays: OverlaysDigest | null
@@ -92,6 +106,8 @@ export interface ExplainState {
   strike: StrikeDigest | null
   positions: PositionDigest[]
   sections?: SectionsState
+  /** Printed only when the caller sets `includeRStats` (its own checkbox, default off). */
+  rstats?: RStatsDigest | null
 }
 
 export const EMPTY_EXPLAIN_STATE: ExplainState = { chart: null, overlays: null, levels: null, ivRank: null, fib: null, strike: null, positions: [] }
@@ -163,7 +179,7 @@ function positionLine(p: PositionDigest): string | null {
   return `POS: ${label} qty=${num(p.qty)} avg=${num(p.avg)}`
 }
 
-export function buildExplainDigest(state: ExplainState, opts: { includePositions: boolean; /** Test hook: a lower cap than the default. */ maxChars?: number }): string {
+export function buildExplainDigest(state: ExplainState, opts: { includePositions: boolean; /** The user ticked "Include my R stats" (default off). */ includeRStats?: boolean; /** Test hook: a lower cap than the default. */ maxChars?: number }): string {
   const c = state.chart
   const o = state.overlays
   const l = state.levels
@@ -182,6 +198,12 @@ export function buildExplainDigest(state: ExplainState, opts: { includePositions
   if (s) {
     lines.push(
       `STRIKE: right=${right(s.right)} strike=${num(s.strike)} dte=${int(s.dte)} em_units=${num(s.emUnits)} wall=${num(s.wall)} earnings_inside=${bool(s.earningsInside)} verdict=${oneOf(s.verdict, VERDICTS)}`,
+    )
+  }
+  if (opts.includeRStats === true) {
+    const r = state.rstats
+    lines.push(
+      `RSTATS: n=${int(r?.n)} n_with_r=${int(r?.nWithR)} expectancy_r=${num(r?.expectancyR)} win_rate=${num(r?.winRate)} avg_win_r=${num(r?.avgWinR)} avg_loss_r=${num(r?.avgLossR)} sqn=${num(r?.sqn)} heat_pct=${num(r?.heatPct)}`,
     )
   }
   const sec = state.sections

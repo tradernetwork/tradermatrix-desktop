@@ -8,9 +8,9 @@ describe('F8 dev pages only on request', () => {
     expect(Object.keys(rollupInputs({ REBULL_DEV_PAGES: '0' }))).toEqual(['main'])
     expect(Object.keys(rollupInputs({ REBULL_DEV_PAGES: 'true' }))).toEqual(['main'])
   })
-  it('REBULL_DEV_PAGES=1 adds the six dev pages', () => {
+  it('REBULL_DEV_PAGES=1 adds the eight dev pages', () => {
     const k = Object.keys(rollupInputs({ REBULL_DEV_PAGES: '1' })).sort()
-    expect(k).toEqual(['chartDev', 'chatDev', 'journalDev', 'main', 'syncDev', 'ticketDev', 'tmDev'])
+    expect(k).toEqual(['alertsDev', 'chartDev', 'chatDev', 'journalDev', 'main', 'riskDev', 'syncDev', 'ticketDev', 'tmDev'])
     expect(rollupInputs({ REBULL_DEV_PAGES: '1' }).chartDev).toBe('chart-dev.html')
     expect(rollupInputs({ REBULL_DEV_PAGES: '1' }).syncDev).toBe('sync-dev.html')
     expect(rollupInputs({ REBULL_DEV_PAGES: '1' }).chatDev).toBe('chat-dev.html')

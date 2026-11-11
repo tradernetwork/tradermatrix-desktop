@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ERROR_TEXT } from '../lib/explainPrompt'
-import { effectiveUrl, HERMES_LOOPBACK_SUGGESTION, HERMES_SETUP_STEPS, HERMES_WARNING, needsKeyAgain, orderProviders, providerInfo, validateSetup, type ProviderId } from '../lib/llmProviders'
+import { cliCards, cliHidden, cliTerms, effectiveUrl, foundLine, HERMES_LOOPBACK_SUGGESTION, HERMES_SETUP_STEPS, HERMES_WARNING, keyHelpText, needsKeyAgain, orderProviders, providerInfo, validateSetup, type ProviderId } from '../lib/llmProviders'
 import { configNeedsSetup, useExplainStore } from '../stores/explain'
 
 /**
@@ -14,8 +14,18 @@ export function ExplainSetup() {
   const saving = useExplainStore((s) => s.saving)
   const testing = useExplainStore((s) => s.testing)
   const testResult = useExplainStore((s) => s.testResult)
-  const cards = orderProviders(detect)
-  const [sel, setSel] = useState<ProviderId>(() => (providerInfo(config?.provider)?.id ?? cards[0]!.info.id))
+  const cliDetect = useExplainStore((s) => s.cliDetect)
+  const experimental = useExplainStore((s) => s.experimental)
+  const advancedCli = useExplainStore((s) => s.advancedCli)
+  const versions = useExplainStore((s) => s.versions)
+  const orLogin = useExplainStore((s) => s.orLogin)
+  const cards = orderProviders(detect, cliDetect, experimental, advancedCli)
+  const notUsed = cliCards(cliDetect, experimental, advancedCli)
+  const cliGated = cliHidden(cliDetect, advancedCli)
+  const [sel, setSel] = useState<ProviderId>(() => {
+    const saved = providerInfo(config?.provider)?.id
+    return saved && cards.some((c) => c.info.id === saved) ? saved : cards[0]!.info.id
+  })
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
   const [compat, setCompat] = useState(false)
@@ -30,6 +40,9 @@ export function ExplainSetup() {
 
   useEffect(() => {
     void useExplainStore.getState().runDetect()
+    void useExplainStore.getState().runCliDetect()
+    void useExplainStore.getState().loadExperimental()
+    void useExplainStore.getState().loadAdvancedCli()
   }, [])
 
   const pick = (id: ProviderId) => {
@@ -75,7 +88,10 @@ export function ExplainSetup() {
   const status = config ? { provider: config.provider, base_url: config.base_url, model: config.model, key_present: config.key_present, lan_http: config.lan_http } : null
   const again = needsKeyAgain(p, { baseUrl }, status)
   const found = cards.find((c) => c.info.id === sel)?.found ?? false
-  const localLike = p.id === 'ollama' || p.id === 'lmstudio' || p.id === 'claude_cli'
+  const localLike = p.id === 'ollama' || p.id === 'lmstudio' || p.id === 'claude_cli' || p.id === 'hermes_cli'
+  const isCli = p.id === 'claude_cli' || p.id === 'hermes_cli'
+  const terms = cliTerms(p.id, cliDetect)
+  const cliFoundId = cliDetect?.found.find((f) => f.provider === p.id)?.id
 
   return (
     <div className="explain-setup" aria-label="Choose how the explainer thinks">
@@ -93,6 +109,25 @@ export function ExplainSetup() {
           </button>
         ))}
       </div>
+
+      {notUsed.length > 0 && (
+        <div className="explain-cli-found" aria-label="Other programs found on this computer">
+          <div className="small muted">Also found on this computer (not used by this app):</div>
+          <ul className="small">
+            {notUsed.map((c) => (
+              <li key={c.id}>
+                <strong>{c.label}</strong> <span className="pill">{c.state === 'experimental_off' ? 'Found, experimental (off)' : 'Found, not supported'}</span>
+                <div className="muted">{foundLine(c)}</div>
+                <div className="muted">{c.terms}</div>
+                <button type="button" className="link" onClick={() => void useExplainStore.getState().checkVersion(c.id)} aria-label={`Check version of ${c.label}`}>
+                  Check version
+                </button>
+                {versions[c.id] && <span className="muted"> {versions[c.id]}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <form
         className="explain-setup-form"
@@ -135,10 +170,41 @@ export function ExplainSetup() {
             </label>
             {p.keyHelpUrl && (
               <span className="small muted">
-                Get a key at <code>{p.keyHelpUrl}</code> (open it in your browser, then paste the key here).
+                Get a key at <code>{keyHelpText(p.keyHelpUrl)}</code> (open it in your browser, then paste the key here).
               </span>
             )}
             {again && <span className="small err">This is a different address than the saved key was entered for, so paste the key again.</span>}
+            {p.id === 'openrouter' && (
+              <div className="explain-signin small">
+                <button type="button" onClick={() => void useExplainStore.getState().startOrLogin()} disabled={orLogin.phase === 'pending' || saving}>
+                  Sign in with OpenRouter
+                </button>{' '}
+                <span className="muted">or paste a key above. Signing in opens your browser; no key to copy.</span>
+                {orLogin.phase === 'pending' && (
+                  <div role="status">
+                    Waiting for you to finish signing in, in your browser.{orLogin.url && ' If it did not open, open this link yourself:'} {orLogin.url && <code>{orLogin.url}</code>}{' '}
+                    <button type="button" className="link" onClick={() => useExplainStore.getState().stopOrLogin()}>
+                      Stop waiting
+                    </button>
+                  </div>
+                )}
+                {orLogin.phase === 'done' && (
+                  <div className="note" role="status">
+                    Signed in. Your OpenRouter key is saved (hidden). Press Test to check it works.
+                  </div>
+                )}
+                {orLogin.phase === 'failed' && (
+                  <div className="err" role="alert">
+                    {orLogin.note || 'Sign-in did not finish. Try again, or paste a key instead.'}
+                  </div>
+                )}
+                {orLogin.phase === 'expired' && (
+                  <div className="err" role="alert">
+                    Sign-in took too long (over 10 minutes). Try again, or paste a key instead.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
         {!p.takesKey && p.http && (
@@ -149,6 +215,20 @@ export function ExplainSetup() {
         {p.id === 'claude_cli' && (
           <div className="small muted">
             Nothing to enter. {found ? 'Claude was found on this computer.' : detect ? "Claude wasn't found on this computer." : 'Checking...'} It runs with every tool turned off, so it can only write text.
+          </div>
+        )}
+        {p.id === 'hermes_cli' && (
+          <div className="small muted">
+            Nothing to enter. {found ? 'Hermes was found on this computer.' : "Hermes wasn't found on this computer."} Experimental: it asks Hermes for text only, but this app has not been able to confirm on a real install that no tool can run.
+          </div>
+        )}
+        {isCli && terms && <div className="small muted explain-terms">{terms}</div>}
+        {isCli && found && cliFoundId && (
+          <div className="small">
+            <button type="button" className="link" onClick={() => void useExplainStore.getState().checkVersion(cliFoundId)}>
+              Check version
+            </button>
+            {versions[cliFoundId] && <span className="muted"> {versions[cliFoundId]}</span>}
           </div>
         )}
 
@@ -177,6 +257,18 @@ export function ExplainSetup() {
             </label>
           )}
           {!p.http && <span className="small muted">Nothing to adjust for this one.</span>}
+          {cliDetect?.public_build && (
+            <label className="small">
+              <input type="checkbox" checked={advancedCli} onChange={(e) => void useExplainStore.getState().setAdvancedCli(e.target.checked)} /> Show installed-CLI options
+              <span className="muted"> (off by default; programs already installed on this computer can be used as the explainer)</span>
+            </label>
+          )}
+          {advancedCli && cliDetect?.public_build && p.id !== 'claude_cli' && <span className="small muted explain-terms">{cliTerms('claude_cli', cliDetect)}</span>}
+          {!cliGated && (
+            <label className="small">
+              <input type="checkbox" checked={experimental} onChange={(e) => void useExplainStore.getState().setExperimental(e.target.checked)} /> Allow experimental agent programs (currently only Hermes). They are untested and off by default.
+            </label>
+          )}
         </details>
 
         <div className="explain-setup-actions">

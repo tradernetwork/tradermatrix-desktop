@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { RH_SCOPE_NOTE } from '../lib/brand'
 import { gateMode, useVaultStore } from '../stores/vault'
 import { connectState, useRhStore } from '../stores/rh'
 import { disconnectSession } from '../stores/session'
@@ -62,6 +63,7 @@ export function ConnectButton() {
       <button onClick={() => void connect()} disabled={locked} title={locked ? 'Unlock the vault first' : 'Log in to Robinhood in your browser'}>
         {state === 'error' ? 'Retry Robinhood' : 'Connect Robinhood'}
       </button>
+      <span className="small muted rh-scope-note" title={RH_SCOPE_NOTE}>{RH_SCOPE_NOTE}</span>
       {state === 'error' && (
         <span className="err" title={mask(connectError)}>
           {mask(connectError).length > 70 ? mask(connectError).slice(0, 70) + '...' : mask(connectError)}

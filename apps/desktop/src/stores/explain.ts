@@ -5,22 +5,27 @@
  * `saveConfig` as an argument and is never kept here. The store only knows the non-secret status (provider, address, model, key present).
  */
 import { create } from 'zustand'
-import { api, type AppendOut, type AskOut, type LlmDetect, type LlmStatus, type NewMessage, type ThreadMeta, type UsageSummary } from '../lib/api'
+import { api, type AppendOut, type AskOut, type CliDetect, type LlmDetect, type LlmStatus, type NewMessage, type ThreadMeta, type UsageSummary } from '../lib/api'
 import { keyShapeError, providerInfo } from '../lib/llmProviders'
 import { buildExplainDigest, EMPTY_EXPLAIN_STATE, type BarRow, type ExplainState, type PositionDigest, type SectionsState } from '../lib/explainDigest'
 import { groundReply } from '../lib/explainGround'
+import { lensSent, selectLenses, toggleLens as toggleLensPick, type LensId } from '../lib/explainLenses'
 import { BUDGET_MONTH_KEY, BUDGET_SESSION_KEY, CHAT_MODE_KEY, CHAT_SAVE_HISTORY_KEY, DEFAULT_MODE, estimateTokens, isValidModel, MAX_PROMPT_CHARS, MAX_USER_MESSAGES, newRequestId, parseMode, PROMPT_VERSION, replayHistory, serializeMode, toErrorCode, type ExplainErrorCode, type ExplainMode, type Turn } from '../lib/explainPrompt'
 import { looksLikeSecret } from '../lib/redact'
 import { useChartContext } from './chartContext'
 import { useFocusStore } from './explainFocus'
+import { equityOf, matchPositionRisk, rstatsDigestState, statsView } from '../lib/riskUi'
+import { heatReadout } from '../lib/riskHeat'
+import { maskAccount } from '../lib/format'
 import { useRhStore } from './rh'
+import { useRiskStore } from './risk'
 import { useTmStore } from './tm'
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** Assembles the digest input from what the other stores already hold. Positions only when `includePositions` (default off). */
 /** `extra.sections` = the "Ask about this" fragment (M16 B4); `extra.includeBars` = the user ticked "Include recent bars". Both default off. */
-export function collectExplainState(includePositions: boolean, extra?: { sections?: SectionsState | null; includeBars?: boolean }): ExplainState {
+export function collectExplainState(includePositions: boolean, extra?: { sections?: SectionsState | null; includeBars?: boolean; includeRStats?: boolean }): ExplainState {
   const cc = useChartContext.getState()
   const rh = useRhStore.getState()
   const symbol = cc.chart?.symbol ?? rh.chartSymbol
@@ -56,7 +61,17 @@ export function collectExplainState(includePositions: boolean, extra?: { section
     ivRank: entry?.iv.data?.iv_rank ?? null,
     positions,
     sections: sectionsFor(extra?.sections ?? null, extra?.includeBars ? cc.recentBars : null),
+    rstats: extra?.includeRStats ? rstatsNumbers() : null,
   }
+}
+
+/** Numbers only (M18): the recorded-R statistics and the heat percent. No symbols, notes, account or trade keys leave this function. */
+function rstatsNumbers() {
+  const rh = useRhStore.getState()
+  const risk = useRiskStore.getState()
+  const view = statsView(risk.stats, [], false)
+  const heat = heatReadout(equityOf(rh.portfolio), matchPositionRisk(risk.drafts, rh.account ? maskAccount(rh.account) : null, rh.positions, rh.optionPositions))
+  return rstatsDigestState(view, heat.pctOfEquity)
 }
 
 function sectionsFor(focus: SectionsState | null, bars: readonly { timestamp: number; open: number; high: number; low: number; close: number; volume: number }[] | null): SectionsState | undefined {
@@ -87,6 +102,8 @@ export interface Sent {
   historyTurns: number
   /** The "Ask about this" fragment that rode along (memory only; Retry reuses it). */
   focus?: SectionsState | null
+  /** Reference cards (M20b) that went with this question: id, name, version. The text lives in Rust. */
+  lenses: { id: LensId; name: string; version: number }[]
 }
 /** One transcript turn. `id` = the stored message id (when history is saved), `partial` = the answer was stopped or cut off. */
 export interface ChatTurn extends Turn {
@@ -100,6 +117,19 @@ export interface Streaming {
   gen: number
 }
 export type SentLogEntry = Sent & { /** Index in `turns` of the assistant reply this was sent for. */ turnIndex: number }
+export interface OrLoginState {
+  phase: 'idle' | 'pending' | 'done' | 'failed' | 'expired'
+  /** The sign-in link (also opened in the browser); shown as text in case the browser did not open. */
+  url: string
+  /** A plain-words note for a start that was refused. */
+  note: string
+}
+const OR_IDLE: OrLoginState = { phase: 'idle', url: '', note: '' }
+export const EXPERIMENTAL_KEY = 'llm.experimentalCli'
+/** M19: in a public build the installed-CLI cards are hidden (and refused by Rust) until this setting is on. */
+export const ADVANCED_CLI_KEY = 'llm.advancedCli'
+let loginToken = 0
+
 export type TestResult = { ok: true } | { ok: false; code: ExplainErrorCode }
 
 interface ExplainStore {
@@ -126,10 +156,22 @@ interface ExplainStore {
   includePositions: boolean
   /** "Include recent bars" (default off): adds the BARS section (last 30 OHLCV lines) to the digest. */
   includeBars: boolean
+  /** "Include my R stats" (default off): adds the numbers-only RSTATS line to the digest. */
+  includeRStats: boolean
   /** Non-secret provider status from `llm_config_status`. null = not loaded yet (or wiped). provider === null = nothing set up. */
   config: LlmStatus | null
   /** What is installed / running on this computer (loopback probes and a PATH search). null = not probed. */
   detect: LlmDetect | null
+  /** M21: agent CLIs found by the presence-only registry scan (null = not scanned). */
+  cliDetect: CliDetect | null
+  /** Result text of each explicit "Check version" click, by CLI id. */
+  versions: Record<string, string>
+  /** `llm.experimentalCli` (default off). */
+  experimental: boolean
+  /** `llm.advancedCli` (default off): "Show installed-CLI options". Only matters in a public build. */
+  advancedCli: boolean
+  /** M21: "Sign in with OpenRouter". The webview only ever holds the link and a phase; the key stays in Rust. */
+  orLogin: OrLoginState
   setupOpen: boolean
   saving: boolean
   testing: boolean
@@ -163,8 +205,23 @@ interface ExplainStore {
   exportThread: () => Promise<void>
   setIncludePositions: (v: boolean) => void
   setIncludeBars: (v: boolean) => void
+  setIncludeRStats: (v: boolean) => void
+  /** Lenses (M20b): `lensAuto` (default on) picks cards from the focus and the question; otherwise exactly `lensPick` (two at most). */
+  lensAuto: boolean
+  lensPick: LensId[]
+  setLensAuto: (v: boolean) => void
+  /** A chip click: turns Auto off, then adds or removes that card (a third is ignored). */
+  toggleLens: (id: LensId) => void
   loadConfig: () => Promise<void>
   runDetect: () => Promise<void>
+  runCliDetect: () => Promise<void>
+  checkVersion: (id: string) => Promise<void>
+  loadExperimental: () => Promise<void>
+  setExperimental: (on: boolean) => Promise<void>
+  loadAdvancedCli: () => Promise<void>
+  setAdvancedCli: (on: boolean) => Promise<void>
+  startOrLogin: (pollMs?: number) => Promise<void>
+  stopOrLogin: () => void
   openSetup: (open: boolean) => void
   /** Returns '' on success or a message that never contains the key. */
   saveConfig: (f: SaveForm) => Promise<string>
@@ -232,8 +289,14 @@ export const useExplainStore = create<ExplainStore>((set, get) => ({
   error: '',
   includePositions: false,
   includeBars: false,
+  includeRStats: false,
   config: null,
   detect: null,
+  cliDetect: null,
+  versions: {},
+  experimental: false,
+  advancedCli: false,
+  orLogin: OR_IDLE,
   setupOpen: false,
   saving: false,
   testing: false,
@@ -289,6 +352,7 @@ export const useExplainStore = create<ExplainStore>((set, get) => ({
     const epoch = s.epoch
     const includePositions = s.includePositions
     const includeBars = s.includeBars
+    const includeRStats = s.includeRStats
     // the pointed-at fragment (M16 B4): the pending one, or (on Retry) the one that went with the question being retried
     const pending = useFocusStore.getState().focus
     const retryFocus = opts?.retryIndex !== undefined ? (s.sentLog.find((x) => x.turnIndex === opts.retryIndex! + 1)?.focus ?? null) : null
@@ -324,19 +388,29 @@ export const useExplainStore = create<ExplainStore>((set, get) => ({
       const gen = get().threadGen
       const threadId = get().threadId
       const history = replayHistory(base)
-      const digest = buildExplainDigest(collectExplainState(includePositions, { sections: focusSections, includeBars }), { includePositions })
+      const digest = buildExplainDigest(collectExplainState(includePositions, { sections: focusSections, includeBars, includeRStats }), { includePositions, includeRStats })
       const chars = [...digest].length + [...question].length + history.reduce((n, h) => n + [...h.text].length, 0)
-      const sent: Sent = { digest, promptVersion: PROMPT_VERSION, model, estTokens: estimateTokens(chars), question, historyTurns: history.length, focus: focusSections }
+      const lensIds = selectLenses(get().lensAuto, get().lensPick, { digest, question })
+      const sent: Sent = { digest, promptVersion: PROMPT_VERSION, model, estTokens: estimateTokens(chars), question, historyTurns: history.length, focus: focusSections, lenses: lensSent(lensIds) }
       set({ lastSent: sent, streaming: { requestId, text: '', gen } })
       let out: AskOut | null = null
       let failure: unknown = null
       try {
-        out = await api.explainAsk(model, digest, question, history, s.mode, requestId, (t) => {
-          if (get().epoch !== epoch) return
-          acc += t
-          const cur = get().streaming
-          if (cur && cur.requestId === requestId) set({ streaming: { ...cur, text: acc } })
-        })
+        out = await api.explainAsk(
+          model,
+          digest,
+          question,
+          history,
+          s.mode,
+          requestId,
+          (t) => {
+            if (get().epoch !== epoch) return
+            acc += t
+            const cur = get().streaming
+            if (cur && cur.requestId === requestId) set({ streaming: { ...cur, text: acc } })
+          },
+          lensIds,
+        )
       } catch (e) {
         failure = e
       }
@@ -532,6 +606,14 @@ export const useExplainStore = create<ExplainStore>((set, get) => ({
 
   setIncludePositions: (v) => set({ includePositions: v }),
   setIncludeBars: (v) => set({ includeBars: v }),
+  setIncludeRStats: (v) => set({ includeRStats: v }),
+  lensAuto: true,
+  lensPick: [],
+  setLensAuto: (v) => set({ lensAuto: v }),
+  toggleLens: (id) => {
+    const s = get()
+    set({ lensAuto: false, lensPick: toggleLensPick(s.lensAuto ? [] : s.lensPick, id) })
+  },
 
   loadConfig: async () => {
     try {
@@ -546,6 +628,90 @@ export const useExplainStore = create<ExplainStore>((set, get) => ({
     } catch {
       set({ detect: { claude_cli: false, ollama: false, lmstudio: false } })
     }
+  },
+  runCliDetect: async () => {
+    try {
+      set({ cliDetect: await api.llmCliDetect() })
+    } catch {
+      set({ cliDetect: { public_build: false, found: [] } })
+    }
+  },
+  checkVersion: async (id) => {
+    set({ versions: { ...get().versions, [id]: 'Checking...' } })
+    let text = 'Could not read a version.'
+    try {
+      const v = (await api.llmCliCheckVersion(id)).trim()
+      if (v) text = v
+    } catch {
+      /* a fixed code from Rust; the plain sentence above covers all of them */
+    }
+    set({ versions: { ...get().versions, [id]: text } })
+  },
+  loadExperimental: async () => {
+    try {
+      const raw = await api.settingGet(EXPERIMENTAL_KEY)
+      set({ experimental: raw !== null && JSON.parse(raw) === true })
+    } catch {
+      set({ experimental: false })
+    }
+  },
+  setExperimental: async (on) => {
+    try {
+      await api.settingSet(EXPERIMENTAL_KEY, JSON.stringify(on))
+      set({ experimental: on })
+    } catch {
+      /* the switch stays where it was */
+    }
+  },
+  loadAdvancedCli: async () => {
+    try {
+      const raw = await api.settingGet(ADVANCED_CLI_KEY)
+      set({ advancedCli: raw !== null && JSON.parse(raw) === true })
+    } catch {
+      set({ advancedCli: false })
+    }
+  },
+  setAdvancedCli: async (on) => {
+    try {
+      await api.settingSet(ADVANCED_CLI_KEY, JSON.stringify(on))
+      set({ advancedCli: on })
+    } catch {
+      /* the switch stays where it was */
+    }
+  },
+  startOrLogin: async (pollMs = 1500) => {
+    if (get().orLogin.phase === 'pending') return
+    const token = ++loginToken
+    set({ orLogin: { phase: 'pending', url: '', note: '' } })
+    let id: string
+    try {
+      const s = await api.llmOpenrouterLoginStart()
+      id = s.pending_id
+      if (token === loginToken) set({ orLogin: { phase: 'pending', url: s.url, note: '' } })
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      if (token === loginToken) set({ orLogin: { phase: 'failed', url: '', note: m === 'rate_limited' ? 'A sign-in from a moment ago is still open. Finish it in your browser, or wait up to 10 minutes and try again.' : '' } })
+      return
+    }
+    while (token === loginToken) {
+      await new Promise((r) => setTimeout(r, pollMs))
+      if (token !== loginToken) return
+      let phase: string
+      try {
+        phase = await api.llmOpenrouterLoginStatus(id)
+      } catch {
+        phase = 'failed'
+      }
+      if (phase === 'pending') continue
+      const next = phase === 'done' || phase === 'expired' ? phase : 'failed'
+      set({ orLogin: { phase: next, url: '', note: '' } })
+      if (next === 'done') await get().loadConfig()
+      return
+    }
+  },
+  stopOrLogin: () => {
+    loginToken += 1
+    set({ orLogin: OR_IDLE })
   },
   openSetup: (open) => set({ setupOpen: open, testResult: open ? get().testResult : null }),
 
@@ -594,10 +760,11 @@ export const useExplainStore = create<ExplainStore>((set, get) => ({
     if (cur) void api.explainStop(cur.requestId).catch(() => undefined)
     void api.explainUsageSummary(true).catch(() => undefined)
     useFocusStore.getState().reset()
-    set({ ...FRESH, includeBars: false, error: '', lastSent: null, sentLog: [], config: null, testing: false, testResult: null, saving: false, threadGen: get().threadGen + 1, epoch: get().epoch + 1 })
+    set({ ...FRESH, includeBars: false, includeRStats: false, error: '', lastSent: null, sentLog: [], config: null, testing: false, testResult: null, saving: false, threadGen: get().threadGen + 1, epoch: get().epoch + 1 })
   },
   reset: () => {
+    loginToken += 1
     useFocusStore.getState().reset()
-    set({ ...FRESH, error: '', lastSent: null, sentLog: [], mode: DEFAULT_MODE, includePositions: false, includeBars: false, config: null, detect: null, setupOpen: false, saving: false, testing: false, testResult: null, epoch: 0, saveHistory: true, threadGen: 0 })
+    set({ ...FRESH, error: '', lastSent: null, sentLog: [], mode: DEFAULT_MODE, includePositions: false, includeBars: false, includeRStats: false, config: null, detect: null, cliDetect: null, versions: {}, experimental: false, advancedCli: false, orLogin: OR_IDLE, setupOpen: false, saving: false, testing: false, testResult: null, epoch: 0, saveHistory: true, threadGen: 0, lensAuto: true, lensPick: [] })
   },
 }))

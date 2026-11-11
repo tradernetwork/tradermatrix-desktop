@@ -491,6 +491,9 @@ pub struct TmWatchlists {
     pub tickers_per_list: Option<u32>,
     pub tickers_across_all_lists: Option<u32>,
     pub max_lists: Option<u32>,
+    /// The response is a free-tier PREVIEW or otherwise cut short (a `preview` marker, a list holding fewer rows than its own count, fewer lists
+    /// than the server says exist). A truncated read must never be treated as the whole list: the sync refuses to diff it.
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -531,9 +534,21 @@ fn v_text(v: &Value) -> Option<String> {
     val_str(v).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
+/// A marker field counts when it is present and not null, false, 0, "" or "false".
+pub fn truthy(v: Option<&Value>) -> bool {
+    match v {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
+        Some(Value::String(s)) => !s.trim().is_empty() && !s.trim().eq_ignore_ascii_case("false"),
+        Some(_) => true,
+    }
+}
+
 pub fn parse_watchlists(v: &Value) -> Result<TmWatchlists, RhError> {
     let o = v.as_object().ok_or_else(|| RhError::Protocol("TraderMatrix watchlists response was not an object".into()))?;
     let mut lists = Vec::new();
+    let mut truncated = truthy(o.get("preview")) || truthy(o.get("truncated"));
     for l in o.get("lists").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default() {
         let Some(l) = l.as_object() else { continue };
         let Some(id) = l.get("id").and_then(v_i64) else { continue };
@@ -549,6 +564,10 @@ pub fn parse_watchlists(v: &Value) -> Result<TmWatchlists, RhError> {
             })
             .map(|t| t.to_ascii_uppercase())
             .collect();
+        let count = l.get("tickerCount").and_then(v_i64).and_then(|n| usize::try_from(n).ok());
+        if truthy(l.get("preview")) || truthy(l.get("truncated")) || count.is_some_and(|c| c > tickers.len()) {
+            truncated = true;
+        }
         lists.push(TmWatchlist {
             id,
             name: l.get("name").and_then(v_text).unwrap_or_default(),
@@ -558,9 +577,13 @@ pub fn parse_watchlists(v: &Value) -> Result<TmWatchlists, RhError> {
             tickers,
         });
     }
+    let total = ["totalLists", "total_lists", "listCount"].iter().find_map(|k| o.get(*k).and_then(v_i64)).and_then(|n| usize::try_from(n).ok());
+    if total.is_some_and(|t| t > lists.len()) {
+        truncated = true;
+    }
     let lim = o.get("limits").and_then(Value::as_object);
     let limit = |k: &str| lim.and_then(|m| m.get(k)).and_then(v_u32);
-    Ok(TmWatchlists { lists, tickers_per_list: limit("tickersPerList"), tickers_across_all_lists: limit("tickersAcrossAllLists"), max_lists: limit("lists") })
+    Ok(TmWatchlists { lists, tickers_per_list: limit("tickersPerList"), tickers_across_all_lists: limit("tickersAcrossAllLists"), max_lists: limit("lists"), truncated })
 }
 
 /// `{ok:false, error, availableLists?}` becomes a tool error carrying the text; anything else passes through.

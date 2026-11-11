@@ -1,3 +1,5 @@
+pub mod alert_commands;
+pub mod alerts;
 pub mod candles;
 pub mod commands;
 pub mod db;
@@ -9,6 +11,8 @@ pub mod journal;
 pub mod llm;
 pub mod llm_commands;
 pub mod redact;
+pub mod risk;
+pub mod risk_commands;
 pub mod rh;
 pub mod rh_commands;
 pub mod secrets;
@@ -35,6 +39,7 @@ pub fn run() {
     let built = tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let dir = app.path().app_data_dir().map_err(|e| AppError::Io(e.to_string()))?;
             std::fs::create_dir_all(&dir).map_err(AppError::from)?;
@@ -46,11 +51,11 @@ pub fn run() {
                 .and_then(|_| tauri::async_runtime::block_on(db::open(&db_path)))
                 .unwrap_or_else(|e| fail_start(&e));
             startup::harden_data_dir(&dir).unwrap_or_else(|e| fail_start(&e));
-            app.manage(pool);
             let vault = Arc::new(Vault::new(dir.join("vault.rbv")));
             let store: Arc<dyn SecretStore> = select_store(vault.clone());
             app.manage(Arc::new(rh_commands::RhState::new(store.clone(), rh::OAuthConfig::robinhood())));
-            app.manage(Arc::new(tm::TmState::new(store.clone())));
+            app.manage(Arc::new(tm::TmState::new(store.clone()).with_pool(pool.clone())));
+            app.manage(pool);
             app.manage(Arc::new(llm::LlmState::new(store.clone())));
             app.manage(vault);
             app.manage(store);
@@ -122,6 +127,8 @@ pub fn run() {
             tm_commands::tm_watchlists,
             tm_commands::tm_watchlist_add,
             tm_commands::tm_watchlist_create,
+            tm_commands::tm_quota_status,
+            tm_commands::tm_quota_set,
             llm_commands::explain_ask,
             llm_commands::explain_stop,
             llm_commands::explain_usage_summary,
@@ -136,6 +143,23 @@ pub fn run() {
             llm_commands::llm_config_clear,
             llm_commands::llm_test,
             llm_commands::llm_detect,
+            llm_commands::llm_cli_detect,
+            llm_commands::llm_cli_check_version,
+            llm_commands::llm_openrouter_login_start,
+            llm_commands::llm_openrouter_login_status,
+            alert_commands::alert_list,
+            alert_commands::alert_create,
+            alert_commands::alert_update,
+            alert_commands::alert_delete,
+            alert_commands::alert_fire,
+            alert_commands::alert_events,
+            alert_commands::alert_events_ack,
+            alert_commands::alert_notify,
+            risk_commands::risk_get,
+            risk_commands::risk_set,
+            risk_commands::risk_draft_put,
+            risk_commands::risk_promote,
+            risk_commands::risk_stats,
         ])
         .run(tauri::generate_context!());
     if let Err(e) = built {
@@ -145,9 +169,13 @@ pub fn run() {
 }
 
 #[cfg(test)]
+mod alert_tests;
+#[cfg(test)]
 mod explain_tests;
 #[cfg(test)]
 mod journal_tests;
+#[cfg(test)]
+mod risk_tests;
 
 #[cfg(test)]
 mod tests {
@@ -198,6 +226,19 @@ mod tests {
             // meter, and six chat-thread commands (list, load, append, delete, delete_all, export). Local SQLite and files only; no network, no tool names.
             "explain_stop", "explain_usage_summary",
             "explain_thread_list", "explain_thread_load", "explain_thread_append", "explain_thread_delete", "explain_thread_delete_all", "explain_thread_export",
+            // M17a (2026-11-12): exactly seven alert commands (local SQLite only; INFORM ONLY, no order path, no network). `alert_notify` (OS toast) is a later task.
+            // The delete command is `alert_delete`, never a "cancel" name (the order-verb test below stays untouched).
+            "alert_list", "alert_create", "alert_update", "alert_delete", "alert_fire", "alert_events", "alert_events_ack",
+            // M17b (2026-11-12): exactly one more, the best-effort OS notification (text only: title and body, no order data).
+            "alert_notify",
+            // M20a (2026-11-12): exactly two TraderMatrix quota commands: a read of the local call counter and the two budgets, and the setter for those budgets. No tool names, no key, no network.
+            "tm_quota_status", "tm_quota_set",
+            // M21 (2026-11-12): exactly four. `llm_cli_detect` is a presence-only PATH scan (executes nothing); `llm_cli_check_version` runs `--version` of one registry entry ONLY on an explicit click;
+            // the two OpenRouter sign-in commands start a loopback PKCE login and read its status (never the key). Named without order verbs.
+            "llm_cli_detect", "llm_cli_check_version", "llm_openrouter_login_start", "llm_openrouter_login_status",
+            // M18 (2026-11-12): exactly five R-tool commands (local SQLite only; INFORMATIONAL: they never touch a review, a place or any order tool; no network, no key).
+            // `risk_draft_put` stores the planned risk by review id, `risk_promote` links it (or a manual entry) to a journal trade_key, `risk_stats` joins stored R to the trades the webview already holds.
+            "risk_get", "risk_set", "risk_draft_put", "risk_promote", "risk_stats",
         ]
         .iter()
         .map(|s| s.to_string())
@@ -227,7 +268,7 @@ mod tests {
     #[test]
     fn commands_that_can_block_are_async() {
         let srcs = [include_str!("commands.rs"), include_str!("rh_commands.rs"), include_str!("tm_commands.rs"), include_str!("llm_commands.rs")];
-        for name in ["rh_status", "tm_status", "vault_status", "vault_lock", "secret_set", "secret_exists", "secret_delete", "secret_backend_status", "rh_pending_login_url", "explain_ask", "llm_config_set", "llm_config_status", "llm_config_clear", "llm_test", "llm_detect", "explain_stop", "explain_usage_summary", "explain_thread_list", "explain_thread_load", "explain_thread_append", "explain_thread_delete", "explain_thread_delete_all", "explain_thread_export"] {
+        for name in ["rh_status", "tm_status", "vault_status", "vault_lock", "secret_set", "secret_exists", "secret_delete", "secret_backend_status", "rh_pending_login_url", "explain_ask", "llm_config_set", "llm_config_status", "llm_config_clear", "llm_test", "llm_detect", "llm_cli_detect", "llm_cli_check_version", "llm_openrouter_login_start", "llm_openrouter_login_status", "explain_stop", "explain_usage_summary", "explain_thread_list", "explain_thread_load", "explain_thread_append", "explain_thread_delete", "explain_thread_delete_all", "explain_thread_export"] {
             let decl = srcs.iter().find_map(|s| {
                 let i = s.find(&format!("fn {name}("))?;
                 let line_start = s[..i].rfind('\n').map(|p| p + 1).unwrap_or(0);
@@ -279,7 +320,7 @@ mod tests {
             }
         }
         assert!(checked >= 20, "scanned {checked} commands");
-        assert_eq!(tm_checked, 8, "scanned {tm_checked} TM commands");
-        assert_eq!(llm_checked, 14, "scanned {llm_checked} chat commands");
+        assert_eq!(tm_checked, 10, "scanned {tm_checked} TM commands");
+        assert_eq!(llm_checked, 18, "scanned {llm_checked} chat commands");
     }
 }

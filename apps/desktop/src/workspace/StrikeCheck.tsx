@@ -26,7 +26,7 @@ export function StrikeCheckPanel({ symbol, row, side, spot, atr = null }: Strike
   const tmEpoch = useTmStore((s) => s.epoch)
   useEffect(() => {
     if (!symbol) return
-    void useTmStore.getState().loadSymbol(symbol, ['apex', 'move', 'iv'])
+    useTmStore.getState().scheduleSymbol('strike', symbol, ['apex', 'move', 'iv'])
     void useEarningsStore.getState().load(symbol)
   }, [symbol, tmEpoch])
 

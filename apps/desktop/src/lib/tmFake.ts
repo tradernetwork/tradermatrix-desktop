@@ -3,7 +3,7 @@
  * (src-tauri/tests/fixtures/tm/*.json) and maps them to the same snake_case shapes the Rust tm_* commands return.
  * No network, and it never sees a key: the only key state is a "present" boolean supplied by the fake secret store.
  */
-import type { ApexLevels, ExpectedMove, IvRank, TmAddOutcome, TmSnapshot, TmStatus, TmWatchlistMeta, TmWatchlists } from './api'
+import type { ApexLevels, ExpectedMove, IvRank, QuotaStatus, TmAddOutcome, TmPriority, TmSnapshot, TmStatus, TmWatchlistMeta, TmWatchlists } from './api'
 import apexFx from '../../src-tauri/tests/fixtures/tm/apex_levels.json'
 import moveFx from '../../src-tauri/tests/fixtures/tm/expected_move.json'
 import snapFx from '../../src-tauri/tests/fixtures/tm/ticker_snapshot.json'
@@ -64,10 +64,117 @@ function fixtureWatchlists(): TmWatchlists {
     tickers_per_list: num(lim.tickersPerList),
     tickers_across_all_lists: num(lim.tickersAcrossAllLists),
     max_lists: num(lim.lists),
+    truncated: false,
+  }
+}
+
+const DAY_MS = 86_400_000
+const isoZ = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
+
+/**
+ * The fake of the Rust call budget (src-tauri/src/tm/quota.rs), same words and numbers: 10 per minute (sliding 60 s window), 200 per day (UTC day),
+ * background and opportunistic calls refused under 20% remaining. `enforce` is OFF by default so older tests and the other dev pages are unaffected
+ * (calls are still counted); the quota dev page and the quota tests switch it on. Time comes from `now`, which tests replace with a fake clock.
+ */
+export class FakeQuota {
+  now: () => number = () => Date.now()
+  enforce = false
+  perMin = 10
+  perDay = 200
+  used = 0
+  limitSeen: number | null = null
+  paused = false
+  preview = false
+  slowUntil = 0
+  sent: number[] = []
+  private day: number | null = null
+
+  /** The UTC day turns over: the count, the learned limit, the pause and the preview flag start fresh. */
+  private roll(now: number): void {
+    const d = Math.floor(now / DAY_MS)
+    if (this.day !== null && d > this.day) {
+      this.used = 0
+      this.limitSeen = null
+      this.paused = false
+      this.preview = false
+    }
+    if (this.day === null || d > this.day) this.day = d
+  }
+
+  reset(): void {
+    this.now = () => Date.now()
+    this.enforce = false
+    this.perMin = 10
+    this.perDay = 200
+    this.used = 0
+    this.limitSeen = null
+    this.paused = false
+    this.preview = false
+    this.slowUntil = 0
+    this.sent = []
+    this.day = null
+  }
+
+  private limit(): number {
+    return Math.min(this.perDay, this.limitSeen ?? Infinity)
+  }
+
+  status(): QuotaStatus {
+    const now = this.now()
+    this.roll(now)
+    this.sent = this.sent.filter((t) => t > now - 60_000)
+    const limit = this.limit()
+    const paused = this.paused || this.used >= limit
+    let throttled: number | null = this.slowUntil > now ? this.slowUntil : null
+    if (this.sent.length >= this.perMin) throttled = Math.max(throttled ?? 0, this.sent[this.sent.length - this.perMin]! + 60_000)
+    return {
+      day: new Date(now).toISOString().slice(0, 10),
+      used: this.used,
+      limit,
+      remaining: Math.max(0, limit - this.used),
+      per_min: this.perMin,
+      per_day: this.perDay,
+      limit_seen: this.limitSeen,
+      window_used: this.sent.length,
+      throttled_until_ms: throttled,
+      paused,
+      paused_until_ms: paused ? (Math.floor(now / DAY_MS) + 1) * DAY_MS : null,
+      preview: this.preview,
+      now_ms: now,
+    }
+  }
+
+  set(perMin: number, perDay: number): QuotaStatus {
+    if (!Number.isInteger(perMin) || perMin < 1 || perMin > 12) throw new Error('invalid input: calls per minute must be 1 to 12 (TraderMatrix allows 12 on every plan)')
+    if (!Number.isInteger(perDay) || perDay < 1 || perDay > 10_000) throw new Error('invalid input: calls per day must be 1 to 10000')
+    this.perMin = perMin
+    this.perDay = perDay
+    return this.status()
+  }
+
+  /** A call that reaches TraderMatrix: refused with the Rust messages when the budget says no, else counted. */
+  charge(prio: TmPriority = 'interactive'): void {
+    const now = this.now()
+    const s = this.status()
+    if (this.enforce) {
+      const midnight = isoZ(s.paused_until_ms ?? (Math.floor(now / DAY_MS) + 1) * DAY_MS)
+      if (s.paused) throw new Error(`TM paused until ${midnight}: daily budget used (${Math.min(this.used, s.limit)} of ${s.limit} calls)`)
+      if (prio !== 'interactive' && s.remaining * 5 < s.limit) {
+        throw new Error(`TM paused until ${midnight}: daily budget nearly used (${s.remaining} of ${s.limit} calls left, kept for the symbol on screen)`)
+      }
+      const cap = prio === 'interactive' ? this.perMin : Math.max(1, this.perMin - 2)
+      if (this.sent.length >= cap) {
+        const until = this.sent[this.sent.length - cap]! + 60_000
+        throw new Error(`TM throttled until ${isoZ(until)}: ${this.perMin} calls per minute used`)
+      }
+    }
+    this.sent.push(now)
+    this.used += 1
   }
 }
 
 export class FakeTm {
+  quota = new FakeQuota()
   mode: TmMode = 'ok'
   /** Delay before each read resolves, to exercise loading, de-dupe and stale handling. */
   delayMs = 0
@@ -95,6 +202,7 @@ export class FakeTm {
 
   reset(): void {
     this.mode = 'ok'
+    this.quota.reset()
     this.delayMs = 0
     this.calls = []
     this.mutate = null
@@ -118,7 +226,7 @@ export class FakeTm {
     return s && Number.isFinite(s) && s > 0 ? s / FIXTURE_SPOT : 1
   }
 
-  private async read<T>(tool: TmTool, rawSymbol: string, expiration: string | undefined, build: (symbol: string, k: number) => T): Promise<T> {
+  private async read<T>(tool: TmTool, rawSymbol: string, expiration: string | undefined, build: (symbol: string, k: number) => T, prio: TmPriority = 'interactive'): Promise<T> {
     const symbol = rawSymbol.toUpperCase()
     if (!SYMBOL.test(symbol)) throw new Error('invalid input: symbol must be 1-6 letters, optionally .X (for example AAPL or BRK.B)')
     if (expiration !== undefined && !EXPIRATION.test(expiration)) throw new Error('invalid input: expiration must look like YYYY-MM-DD')
@@ -128,6 +236,11 @@ export class FakeTm {
     }
     if (this.mode === 'locked') fail(TM_MSG.locked)
     if (!this.keyPresent()) fail(TM_MSG.missing)
+    try {
+      this.quota.charge(prio)
+    } catch (e) {
+      fail(e instanceof Error ? e.message : String(e))
+    }
     this.calls.push({ tool, symbol, ...(expiration ? { expiration } : {}) })
     if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs))
     if (this.mode === 'rejected') fail(TM_MSG.rejected)
@@ -144,7 +257,7 @@ export class FakeTm {
   }
 
   /** `prep` validates locally (zero "requests" on bad input) and returns the exact tool arguments. */
-  private async wlCall<T>(tool: TmWlTool, prep: () => Record<string, unknown>, body: () => T): Promise<T> {
+  private async wlCall<T>(tool: TmWlTool, prep: () => Record<string, unknown>, body: () => T, prio: TmPriority = 'interactive'): Promise<T> {
     this.callTool(tool)
     const args = prep()
     const fail = (m: string): never => {
@@ -153,6 +266,11 @@ export class FakeTm {
     }
     if (this.mode === 'locked') fail(TM_MSG.locked)
     if (!this.keyPresent()) fail(TM_MSG.missing)
+    try {
+      this.quota.charge(prio)
+    } catch (e) {
+      fail(e instanceof Error ? e.message : String(e))
+    }
     this.wlLog.push({ tool, args })
     if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs))
     if (this.mode === 'rejected') fail(TM_MSG.rejected)
@@ -168,11 +286,24 @@ export class FakeTm {
     return t
   }
 
-  watchlists(): Promise<TmWatchlists> {
-    return this.wlCall('list_watchlists', () => ({}), () => clone(this.wl))
+  watchlists(prio: TmPriority = 'interactive'): Promise<TmWatchlists> {
+    return this.wlCall(
+      'list_watchlists',
+      () => ({}),
+      () => {
+        const out = clone(this.wl)
+        if (this.quota.preview) {
+          // free-tier preview: every list cut to its first 3 rows, marked, while the count still says how many there really are
+          out.lists = out.lists.map((l) => ({ ...l, tickers: l.tickers.slice(0, 3) }))
+          out.truncated = true
+        }
+        return out
+      },
+      prio,
+    )
   }
 
-  watchlistAdd(list: string, ticker: string): Promise<TmAddOutcome> {
+  watchlistAdd(list: string, ticker: string, prio: TmPriority = 'interactive'): Promise<TmAddOutcome> {
     let ref = ''
     let sym = ''
     return this.wlCall(
@@ -202,10 +333,11 @@ export class FakeTm {
           this.onWrite?.(this.addAttempts)
         }
       },
+      prio,
     )
   }
 
-  watchlistCreate(name: string): Promise<TmWatchlistMeta> {
+  watchlistCreate(name: string, prio: TmPriority = 'interactive'): Promise<TmWatchlistMeta> {
     let n = ''
     return this.wlCall(
       'create_watchlist',
@@ -220,10 +352,11 @@ export class FakeTm {
         this.wl.lists = [...this.wl.lists, { id, name: n, category: 'swing', is_default: false, ticker_count: 0, tickers: [] }]
         return { id, name: n, category: 'swing', is_default: false }
       },
+      prio,
     )
   }
 
-  apex(symbol: string, expiration?: string): Promise<ApexLevels> {
+  apex(symbol: string, expiration?: string, prio: TmPriority = 'interactive'): Promise<ApexLevels> {
     return this.read('apex', symbol, expiration, (sym, k) => {
       const raw = clone(apexFx) as J
       const p = (v: unknown) => scale(num(v), k)
@@ -245,10 +378,10 @@ export class FakeTm {
         available_expirations: (raw.availableExpirations as unknown[]).map(String),
         open_url: openUrl(raw, sym),
       }
-    })
+    }, prio)
   }
 
-  expectedMove(symbol: string): Promise<ExpectedMove> {
+  expectedMove(symbol: string, prio: TmPriority = 'interactive'): Promise<ExpectedMove> {
     return this.read('move', symbol, undefined, (sym, k) => {
       const raw = clone(moveFx) as J
       const p = (v: unknown) => scale(num(v), k)
@@ -273,10 +406,10 @@ export class FakeTm {
         interpretation: str(raw.interpretation),
         open_url: openUrl(raw, sym),
       }
-    })
+    }, prio)
   }
 
-  ivRank(symbol: string): Promise<IvRank> {
+  ivRank(symbol: string, prio: TmPriority = 'interactive'): Promise<IvRank> {
     return this.read('iv_rank', symbol, undefined, (sym) => {
       const raw = clone(ivFx) as J
       const rc = raw.recentChange as J | null
@@ -305,10 +438,10 @@ export class FakeTm {
         reason: str(raw.reason),
         open_url: openUrl(raw, sym),
       }
-    })
+    }, prio)
   }
 
-  snapshot(symbol: string): Promise<TmSnapshot> {
+  snapshot(symbol: string, prio: TmPriority = 'interactive'): Promise<TmSnapshot> {
     return this.read('snapshot', symbol, undefined, (sym, k) => {
       const raw = clone(snapFx) as J
       const legs = (raw.legs ?? {}) as J
@@ -358,7 +491,7 @@ export class FakeTm {
         missing: Array.isArray(raw.missing) ? (raw.missing as unknown[]).map(String) : [],
         open_url: openUrl(raw, sym),
       }
-    })
+    }, prio)
   }
 }
 
@@ -369,4 +502,24 @@ function scale(v: number | null, k: number): number | null {
 function openUrl(raw: J, symbol: string): string | null {
   const u = str((raw.openInTraderMatrix as J | undefined)?.url)
   return u ? u.replace(/\/ticker-search\/[A-Z.]+\//, `/ticker-search/${symbol}/`) : null
+}
+
+/** Dev pages: `?quota=near|out|preview|slow`. Turns the fake's budget wall on and sets the scenario. Unknown values are ignored. */
+export function applyQuotaParam(v: string | null, tm: FakeTm): void {
+  if (!v || !['near', 'out', 'preview', 'slow'].includes(v)) return
+  const q = tm.quota
+  q.enforce = true
+  if (v === 'near') q.used = 172
+  if (v === 'out') {
+    q.used = q.perDay
+    q.paused = true
+  }
+  if (v === 'preview') {
+    q.used = 37
+    q.preview = true
+  }
+  if (v === 'slow') {
+    q.used = 37
+    q.slowUntil = q.now() + 60_000
+  }
 }

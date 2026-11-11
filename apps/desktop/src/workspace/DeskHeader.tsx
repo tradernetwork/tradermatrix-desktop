@@ -17,6 +17,7 @@ export function DeskHeader() {
   const approvals = useOrdersStore((o) => o.approvals)
   const approvalsAccount = useOrdersStore((o) => o.approvalsAccount)
   const tmStatus = useTmStore((t) => t.status)
+  const tmQuota = useTmStore((t) => t.quota)
   const vault = useVaultStore((v) => v.status)
   const deskStats = useDeskStatsStore((d) => d.stats)
   const state = connectState(s)
@@ -39,6 +40,7 @@ export function DeskHeader() {
     account: s.account,
     approvalOn: s.account ? approvalSetting[s.account] : undefined,
     tm: tmStatus,
+    quota: tmQuota,
     vault,
     fake: fakeBannerVisible(),
   })
