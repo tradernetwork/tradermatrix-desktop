@@ -1,0 +1,121 @@
+{
+  "symbol": "AAPL",
+  "spot": 348.51,
+  "asOf": "2026-11-11T09:29:07.403Z",
+  "priceStep": 1,
+  "horizons": [
+    {
+      "label": "tomorrow",
+      "calendarDays": 1,
+      "throughDate": "2026-11-12",
+      "tradingDays": 1,
+      "expectedMovePct": 0.019,
+      "band68": {
+        "low": 341,
+        "high": 356
+      },
+      "band95": {
+        "low": 335,
+        "high": 363
+      },
+      "held68Pct": 0.79,
+      "held95Pct": 0.96,
+      "sampleDays": 1257,
+      "extrapolated": false
+    },
+    {
+      "label": "1 week",
+      "calendarDays": 7,
+      "throughDate": "2026-11-18",
+      "tradingDays": 5,
+      "expectedMovePct": 0.036,
+      "band68": {
+        "low": 336,
+        "high": 362
+      },
+      "band95": {
+        "low": 324,
+        "high": 375
+      },
+      "held68Pct": 0.66,
+      "held95Pct": 0.94,
+      "sampleDays": 1253,
+      "extrapolated": false
+    },
+    {
+      "label": "2 weeks",
+      "calendarDays": 14,
+      "throughDate": "2026-11-25",
+      "tradingDays": 10,
+      "expectedMovePct": 0.046,
+      "band68": {
+        "low": 332,
+        "high": 365
+      },
+      "band95": {
+        "low": 318,
+        "high": 382
+      },
+      "held68Pct": 0.59,
+      "held95Pct": 0.92,
+      "sampleDays": 1248,
+      "extrapolated": false
+    },
+    {
+      "label": "1 month",
+      "calendarDays": 30,
+      "throughDate": "2026-12-11",
+      "tradingDays": 21,
+      "expectedMovePct": 0.067,
+      "band68": {
+        "low": 325,
+        "high": 373
+      },
+      "band95": {
+        "low": 304,
+        "high": 399
+      },
+      "held68Pct": 0.59,
+      "held95Pct": 0.94,
+      "sampleDays": 1237,
+      "extrapolated": false
+    },
+    {
+      "label": "6 weeks",
+      "calendarDays": 42,
+      "throughDate": "2026-12-23",
+      "tradingDays": 29,
+      "expectedMovePct": 0.079,
+      "band68": {
+        "low": 321,
+        "high": 378
+      },
+      "band95": {
+        "low": 297,
+        "high": 409
+      },
+      "held68Pct": 0.64,
+      "held95Pct": 0.93,
+      "sampleDays": 1229,
+      "extrapolated": false
+    }
+  ],
+  "history": {
+    "from": "2021-11-05",
+    "to": "2026-11-10"
+  },
+  "units": {
+    "expectedMovePct": "decimal fraction of spot (0.042 = 4.2%), 1 standard deviation of the log move, 2 significant figures",
+    "band68": "dollars per share, spot * e^(+-sigma), rounded outward to priceStep (low down, high up)",
+    "band95": "dollars per share, spot * e^(+-2 sigma), rounded outward to priceStep (low down, high up)",
+    "held68Pct": "decimal 0-1: share of past windows whose move stayed inside band68",
+    "held95Pct": "decimal 0-1: share of past windows whose move stayed inside band95",
+    "sampleDays": "count of overlapping past windows the hold rates were measured on",
+    "calendarDays": "calendar days ahead, rolled forward to the next trading session (throughDate); tradingDays is the window length used for the hold rates"
+  },
+  "interpretation": "Options imply about a 1.9% one-sigma move for AAPL over the next day, a 68% band of 341-356; historically a move that size held 79% of the time (n=1257).",
+  "openInTraderMatrix": {
+    "url": "https://www.tradermatrix.pro/ticker-search/AAPL/volatility?utm_source=mcp&utm_medium=ai&utm_campaign=get_expected_move",
+    "label": "Open AAPL volatility on TraderMatrix"
+  }
+}

@@ -1,0 +1,4 @@
+{"data":{"results":[
+ {"quote":{"instrument_id":"opt-1","ask_price":"1.30","bid_price":"1.20","mark_price":"1.25","adjusted_mark_price":"1.25","implied_volatility":"0.31","delta":"-0.22","gamma":"0.03","rho":"-0.01","theta":"-0.04","vega":"0.09","open_interest":1200,"volume":55,"chance_of_profit_short":null}},
+ {"quote":{"instrument_id":"opt-2","ask_price":"2.10","bid_price":"2.00","mark_price":"2.05","delta":0.51,"implied_volatility":null,"open_interest":"800"}}
+],"closes_error":""},"guide":"synthetic"}

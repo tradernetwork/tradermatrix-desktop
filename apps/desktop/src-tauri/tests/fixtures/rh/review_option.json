@@ -1,0 +1,8 @@
+{"data":{"account_number":"SYN00000002","type":"limit","quantity":"1","price":"1.50","time_in_force":"gfd","market_hours":"regular_hours",
+ "legs":[{"option_id":"11111111-2222-4333-8444-555555555555","side":"buy","position_effect":"open","ratio_quantity":1}],
+ "option_quotes":[{"option_id":"11111111-2222-4333-8444-555555555555","bid_price":"1.40","ask_price":"1.60","delta":"0.45"}],
+ "fees":{"total_fee":"0.03"},
+ "collateral":{"cash":{"amount":"150.00","direction":"debit","infinite":false},"equities":[]},
+ "order_checks":{"alert_type":"BUYING_POWER_ALERT","buying_power_alert":{"message":"SYNTHETIC alert"}},
+ "customer_approval_required":false,"customer_approval_required_reason":""},
+ "guide":"synthetic"}

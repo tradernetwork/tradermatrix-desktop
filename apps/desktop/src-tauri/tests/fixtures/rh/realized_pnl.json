@@ -1,0 +1,3 @@
+{"data":{"account_number":"SYN00000001","window":"month","display_currency":"USD","data_points":[
+ {"start_time":"2026-01-01T00:00:00Z","end_time":"2026-01-31T00:00:00Z","realized_gain":"12.50","rate_of_realized_gain":null,"number_of_trades":3}
+],"total_returns":"12.50","total_rate_of_return":"0.0012"},"guide":"synthetic"}

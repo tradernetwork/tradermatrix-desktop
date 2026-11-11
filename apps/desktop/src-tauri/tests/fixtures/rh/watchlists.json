@@ -1,0 +1,4 @@
+{"data":{"watchlists":[
+ {"id":"wl-1","display_name":"Synthetic list","display_description":"","icon_emoji":"x","owner_type":"custom","item_count":3,"allowed_object_types":["instrument"]},
+ {"id":"wl-2","display_name":"Second","item_count":"0"}
+]},"guide":"synthetic"}

@@ -1,0 +1,64 @@
+{
+  "lists": [
+    {
+      "id": 101,
+      "name": "My Watchlist",
+      "category": "swing",
+      "isDefault": true,
+      "tickerCount": 2,
+      "tickers": [
+        {
+          "ticker": "AAAA",
+          "notes": null,
+          "addedAt": "2026-10-26T02:49:10.216Z"
+        },
+        {
+          "ticker": "BBBB",
+          "notes": null,
+          "addedAt": "2026-10-27T15:06:34.824Z"
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "name": "Desk CSP",
+      "category": "csp",
+      "isDefault": false,
+      "tickerCount": 3,
+      "tickers": [
+        {
+          "ticker": "CCCC",
+          "notes": "SELLING B- · 11P 12/18 @0.92 · a long private thesis that the sync must never read or send anywhere",
+          "addedAt": "2026-11-11T01:03:50.094Z"
+        },
+        {
+          "ticker": "DDDD",
+          "notes": "WATCHING C+ · another long note",
+          "addedAt": "2026-11-11T01:03:55.837Z"
+        },
+        {
+          "ticker": "BRK.B",
+          "notes": null,
+          "addedAt": "2026-11-11T01:04:00.800Z"
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "name": "Empty list",
+      "category": "swing",
+      "isDefault": false,
+      "tickerCount": 0,
+      "tickers": []
+    }
+  ],
+  "limits": {
+    "lists": 12,
+    "tickersPerList": 150,
+    "tickersAcrossAllLists": 500
+  },
+  "openInTraderMatrix": {
+    "url": "https://www.tradermatrix.pro/watchlist?utm_source=mcp&utm_medium=ai&utm_campaign=list_watchlists",
+    "label": "Open your Watchlists on TraderMatrix"
+  }
+}

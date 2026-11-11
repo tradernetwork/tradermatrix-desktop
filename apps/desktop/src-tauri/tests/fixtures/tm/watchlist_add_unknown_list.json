@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "error": "Unknown list 'Nope'",
+  "availableLists": [
+    "My Watchlist",
+    "Desk CSP",
+    "Empty list"
+  ]
+}

@@ -1,0 +1,2 @@
+{"data":{"order":{"id":"22222222-3333-4444-8555-666666666666","ref_id":"synthetic-ref","symbol":"AAA","side":"buy","type":"limit","trigger":"immediate","state":"queued","quantity":"1","price":"90.00","time_in_force":"gfd","market_hours":"regular_hours","agent_initiated":true,"placed_agent":"agentic","created_at":"2026-11-10T15:00:00Z"}},
+ "guide":"synthetic"}

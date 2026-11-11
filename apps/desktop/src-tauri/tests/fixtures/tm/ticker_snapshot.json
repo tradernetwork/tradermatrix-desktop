@@ -1,0 +1,60 @@
+{
+  "symbol": "AAPL",
+  "legs": {
+    "quality": {
+      "qualityScore": 82,
+      "qualityScoreOutOf": 100,
+      "qualityLabel": "High quality",
+      "sector": "Technology"
+    },
+    "gamma": {
+      "regime": "positive_gamma",
+      "regimeSummary": "Expect price stability and mean reversion. Large moves will be dampened as dealers hedge by buying dips and selling rips.",
+      "gammaFlipLevel": 342.18,
+      "spotVsFlip": "above_flip",
+      "spotVsFlipDistance": "1_to_3pct",
+      "gammaPocket": "Positive Gamma Pocket"
+    },
+    "apex": {
+      "nearestLevel": {
+        "strike": 350,
+        "score": 73,
+        "scoreOutOf": 100,
+        "side": "above_spot",
+        "distanceFromSpot": "within_1pct"
+      },
+      "dominantLevelStrike": 355,
+      "levelCount": 8
+    },
+    "flow": {
+      "bias": "balanced",
+      "conviction": 0.04,
+      "convictionOutOf": 1,
+      "basis": "cumulative session options flow, aggressor-signed and delta-weighted; \"balanced\" = genuinely two-sided",
+      "updatedAt": "2026-11-10T20:55:06.498Z"
+    },
+    "ivRank": {
+      "ivRank": 37.86827855981068,
+      "ivRankOutOf": 100,
+      "ivRankZone": "mid",
+      "interpretation": "AAPL's IV rank is 37.9 out of 100 — a 0-to-100 scale, not a fraction. Volatility is in the MIDDLE of its own 52-week range — no strong volatility edge either way. Source: cboe.",
+      "source": "cboe",
+      "asOf": "2026-11-10"
+    },
+    "marketHealth": {
+      "compositeScore": 3.5,
+      "compositeScoreMax": 5,
+      "compositeUnit": "points: ALERT = 1.0, WATCH = 0.5, summed over scored signals with data",
+      "label": "HIGH",
+      "alertCount": 3,
+      "watchCount": 1,
+      "asOf": "2026-11-11T13:12:12.830Z"
+    }
+  },
+  "missing": [],
+  "disclaimer": "Informational market analytics, not investment advice.",
+  "openInTraderMatrix": {
+    "url": "https://www.tradermatrix.pro/ticker-search/AAPL/overview?utm_source=mcp&utm_medium=ai&utm_campaign=get_ticker_snapshot",
+    "label": "Open AAPL on TraderMatrix"
+  }
+}

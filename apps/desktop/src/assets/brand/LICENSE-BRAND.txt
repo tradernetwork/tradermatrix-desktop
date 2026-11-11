@@ -1,0 +1,11 @@
+TraderMatrix brand assets
+
+Copyright (c) 2026 TraderMatrix. All rights reserved.
+
+The files in this directory (the TraderMatrix mark, wordmark and lockup, the Arya character stills and avatar crops, and the
+background art) are NOT licensed under the MIT license that covers this repository's source code. They may be used only as part
+of TraderMatrix Desktop as distributed by TraderMatrix, and may not be copied, modified, redistributed or used to imply
+endorsement without written permission from TraderMatrix.
+
+The MIT grant in the repository LICENSE applies to code only. See also NOTICE (BRAND ASSETS) and SOURCES.md in this directory.
+"Robinhood" is a trademark of Robinhood Markets, Inc.; TraderMatrix Desktop is not affiliated with or endorsed by Robinhood.

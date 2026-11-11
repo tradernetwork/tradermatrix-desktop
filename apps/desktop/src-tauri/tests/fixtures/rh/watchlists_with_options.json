@@ -1,0 +1,5 @@
+{"data":{"watchlists":[
+ {"id":"wl-1","display_name":"Synthetic list","icon_emoji":"x","owner_type":"custom","item_count":3,"allowed_object_types":["instrument","currency_pair"]},
+ {"id":"wl-opt","display_name":"My Options","item_count":2,"allowed_object_types":["option_strategy"]},
+ {"id":"wl-null","display_name":"Null types","allowed_object_types":null}
+]},"guide":"synthetic"}

@@ -1,0 +1,55 @@
+/* TraderMatrix desk look (M9). Palette from the ProjectX Desk (same owner, MIT): app navy, card surfaces, gold / steel candles.
+   Existing variable names are kept; their values moved to the desk palette. */
+:root {
+  --tm-gold: #d4a62a; /* ONE gold variable for accents (title, focus rings); the user will supply the brighter hex, change it HERE only */
+
+  /* surfaces: app #070E1F, card #0A0E17, sub #0F1522, raise #151C2E */
+  --tm-ground-base: #070e1f;
+  --tm-ground-brand: #0a0e17;
+  --tm-ground-raised: #0f1522;
+  --tm-surface-1: #0a0e17;
+  --tm-surface-2: #0f1522;
+  --tm-surface-3: #151c2e;
+
+  --tm-border-hair: #1a2238;
+  --tm-border-line: #2a3550;
+
+  --tm-text-primary: #f2f5fa;
+  --tm-text-secondary: #8ea3c4;
+  --tm-text-muted: #6c7a92;
+  --tm-text-dim: #56637a;
+
+  /* P&L and status semantics (NOT candle colors): green gain, magenta loss, amber warning */
+  --tm-bull: #22c55e;
+  --tm-bear: #f43f5e;
+  --tm-warn: #d6a73a;
+  --tm-cyan: #5fb3d9;
+  --tm-purple: #b49ae0;
+
+  /* candles and the BUY / SELL buttons: gold up, steel down, light down wick, grey flat */
+  --tm-up: #ffc93c;
+  --tm-down: #9cb8e6;
+  --tm-down-wick: #e4eeff;
+  --tm-flat: #8d9bb4;
+
+  /* chart chrome (derived from the desk: grid rgba(200,216,238,.07), axis = border) */
+  --tm-grid: rgba(200, 216, 238, 0.07);
+  --tm-axis: #1a2238;
+  --tm-chart-text: #6c7a92;
+  --tm-crosshair: #56637a; /* derived: the desk's dimmest text tone, not specified in the plan */
+
+  /* TraderMatrix chart levels: resistance / call wall, support / put wall, gamma flip, expected-move range */
+  --tm-hot: #ff8000;
+  --tm-support: #00e070;
+  --tm-flip: #b45bff;
+  --tm-range: #4f86ff;
+  --tm-chip-ink: #070e1f; /* dark text on the level chips (derived: the app navy) */
+
+  /* EMA lines */
+  --tm-ema-1: #e9eef6;
+  --tm-ema-2: #5fb3d9;
+  --tm-ema-3: #b49ae0;
+
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+}

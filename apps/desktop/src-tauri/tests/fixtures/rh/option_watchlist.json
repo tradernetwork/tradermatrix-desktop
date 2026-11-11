@@ -1,0 +1,5 @@
+{"data":{"list_id":"wl-opt","items":[
+ {"id":"ow-1","name":"AAA 2026-12-18 150 Call","option_ids":["opt-1"],"chain_symbol":"AAA","expiration_date":"2026-12-18","strike_price":"150.0000","contract_type":"call","extra":{"x":1}},
+ {"id":"ow-2","name":"BBB put","option_ids":null,"chain_symbol":"BBB","expiration_date":null,"strike_price":42.5,"contract_type":"put"},
+ {"id":"ow-3"}
+]},"guide":"synthetic"}

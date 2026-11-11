@@ -1,0 +1,4 @@
+{"data":{"results":[
+ {"quote":{"symbol":"AAA","last_trade_price":"101.25","previous_close":"100.00","adjusted_previous_close":"100.00","bid_price":"101.20","ask_price":"101.30","has_traded":true,"state":"active"},"close":{"symbol":"AAA","price":"100.00","date":null}},
+ {"quote":{"symbol":"BBB","last_trade_price":null,"previous_close":"20.5","bid_price":"","ask_price":null}}
+],"closes_error":""},"guide":"synthetic"}

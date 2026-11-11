@@ -1,0 +1,4 @@
+{"data":{"positions":[
+ {"symbol":"AAA","quantity":"10.0000","intraday_quantity":"10.0000","average_buy_price":"100.5000","shares_available_for_sells":"10.0000","shares_held_for_sells":"0.0000","type":"long","brand_new_field":true},
+ {"symbol":"BBB","quantity":2.5,"average_buy_price":null,"shares_available_for_sells":"2.5"}
+],"next":"cursor-page-2"},"guide":"synthetic"}

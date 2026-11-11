@@ -1,0 +1,6 @@
+{"data":{"account_number":"900000001","span":"month","next_cursor":"cursor-page-2","trades":[
+ {"symbol":"AAA","side":"sell","quantity":"10","price":"101.50","realized_gain":"15.00","timestamp":"2026-11-05T15:30:00Z","extra_field":{"x":1}},
+ null,
+ {"symbol":"BBB","side":"sell","quantity":2.5,"price":"20.1","realized_gain":"-3.25","timestamp":"2026-11-04T14:00:00Z"},
+ {"symbol":"CCC","side":null,"quantity":null,"price":"","realized_gain":null}
+]},"guide":"synthetic"}

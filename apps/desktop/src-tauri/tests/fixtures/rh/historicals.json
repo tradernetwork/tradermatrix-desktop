@@ -1,0 +1,5 @@
+{"data":{"results":[
+ {"symbol":"AAA","interval":"day","bounds":"regular","bars":[
+  {"begins_at":"2026-01-05T00:00:00Z","open_price":"100.0","close_price":"101.0","high_price":"102.0","low_price":"99.5","volume":123456,"session":"reg","interpolated":false},
+  {"begins_at":"2026-01-06T00:00:00Z","open_price":"101.0","close_price":"100.0","high_price":"101.5","low_price":"99.0","volume":"98765"}]}
+],"not_found":["ZZZ"]},"guide":"synthetic"}

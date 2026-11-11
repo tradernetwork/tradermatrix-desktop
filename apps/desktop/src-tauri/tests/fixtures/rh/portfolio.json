@@ -1,0 +1,3 @@
+{"data":{"total_value":"12345.67","equity_value":"10000.5","options_value":"345.17","futures_value":"0","cash":"2000.00","currency":"USD",
+ "buying_power":{"buying_power":"4000.25","unleveraged_buying_power":"2000.00","intraday_buying_power":null,"display_currency":"USD"},
+ "crypto_buying_power":{"buying_power":"0"},"pending_deposits":null},"guide":"synthetic"}

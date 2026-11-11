@@ -1,0 +1,4 @@
+{"data":{"instruments":[
+ {"id":"opt-1","chain_id":"chain-1","chain_symbol":"AAA","expiration_date":"2026-02-20","strike_price":"95.0000","type":"put","state":"active","tradability":"tradable"},
+ {"id":"opt-2","chain_id":"chain-1","chain_symbol":"AAA","expiration_date":"2026-02-20","strike_price":"100.0000","type":"call","state":"active","tradability":"tradable"}
+],"next":""},"guide":"synthetic"}

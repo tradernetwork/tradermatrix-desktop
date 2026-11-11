@@ -1,0 +1,3 @@
+{"data":{"chains":[
+ {"id":"chain-1","symbol":"AAA","can_open_position":true,"cash_component":null,"expiration_dates":["2026-02-20","2026-03-20"],"trade_value_multiplier":"100.0000","underlying_instruments":[{"instrument":"u1","symbol":"AAA"}],"min_ticks":{"above_tick":"0.05","below_tick":"0.01","cutoff_price":"3.00"}}
+]},"guide":"synthetic"}

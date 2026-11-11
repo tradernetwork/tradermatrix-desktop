@@ -1,0 +1,97 @@
+{
+  "symbol": "AAPL",
+  "spotPrice": 348.51,
+  "snapshotTime": "2026-11-11T13:11:18.780Z",
+  "mode": "aggregate",
+  "expirationsUsed": [
+    "2026-11-11",
+    "2026-11-13",
+    "2026-11-16",
+    "2026-11-18",
+    "2026-11-20"
+  ],
+  "availableExpirations": [
+    "2026-11-11",
+    "2026-11-13",
+    "2026-11-16",
+    "2026-11-18",
+    "2026-11-20",
+    "2026-11-23",
+    "2026-11-25",
+    "2026-11-27",
+    "2026-12-04",
+    "2026-12-11"
+  ],
+  "gammaFlip": 343.59,
+  "netGex": 507641364.70656806,
+  "levels": [
+    {
+      "strike": 355,
+      "score": 100,
+      "rank": 1,
+      "netGEX": 232679707.1383302,
+      "totalOI": 72181,
+      "isAboveSpot": true
+    },
+    {
+      "strike": 350,
+      "score": 72,
+      "rank": 2,
+      "netGEX": 126317174.33371967,
+      "totalOI": 53840,
+      "isAboveSpot": true
+    },
+    {
+      "strike": 360,
+      "score": 50,
+      "rank": 3,
+      "netGEX": 79307461.25024816,
+      "totalOI": 53053,
+      "isAboveSpot": true
+    },
+    {
+      "strike": 365,
+      "score": 48,
+      "rank": 4,
+      "netGEX": 76743617.91801468,
+      "totalOI": 58031,
+      "isAboveSpot": true
+    },
+    {
+      "strike": 340,
+      "score": 43,
+      "rank": 5,
+      "netGEX": -32773101.539553437,
+      "totalOI": 50563,
+      "isAboveSpot": false
+    },
+    {
+      "strike": 330,
+      "score": 34,
+      "rank": 6,
+      "netGEX": -31770403.75692648,
+      "totalOI": 51223,
+      "isAboveSpot": false
+    },
+    {
+      "strike": 345,
+      "score": 31,
+      "rank": 7,
+      "netGEX": 6463604.079140488,
+      "totalOI": 36289,
+      "isAboveSpot": false
+    },
+    {
+      "strike": 362.5,
+      "score": 30,
+      "rank": 8,
+      "netGEX": 59806199.264886804,
+      "totalOI": 30470,
+      "isAboveSpot": true
+    }
+  ],
+  "openInTraderMatrix": {
+    "url": "https://www.tradermatrix.pro/ticker-search/AAPL/gex?utm_source=mcp&utm_medium=ai&utm_campaign=get_apex_levels",
+    "label": "Open AAPL Apex levels on TraderMatrix"
+  }
+}

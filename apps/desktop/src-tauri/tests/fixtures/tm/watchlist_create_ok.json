@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "list": {
+    "id": 104,
+    "name": "New list",
+    "category": "swing",
+    "isDefault": false
+  }
+}

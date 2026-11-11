@@ -1,0 +1,31 @@
+{
+  "symbol": "AAPL",
+  "source": "cboe",
+  "ivRank": 37.86827855981068,
+  "ivRankOutOf": 100,
+  "ivRankZone": "mid",
+  "ivRankClamped": null,
+  "ivPercentileUnavailableReason": "not_derivable_from_annual_high_low_pair",
+  "sourceTimestamp": "2026-11-11 12:41:41",
+  "historicalTimestamp": "2026-11-11 02:04:47",
+  "freshness": "last_session",
+  "freshnessReason": "matches_last_completed_session",
+  "asOf": "2026-11-10",
+  "recentChange": {
+    "basis": "self_tracked",
+    "comparableToAtmIv": false,
+    "direction": "down",
+    "pointsChange": -2.0699999999999994,
+    "percentChange": -8.473188702415062,
+    "sessions": 5,
+    "fromIv": 0.2443,
+    "toIv": 0.2236,
+    "fromDate": "2026-11-03",
+    "toDate": "2026-11-10"
+  },
+  "interpretation": "AAPL's IV rank is 37.9 out of 100 — a 0-to-100 scale, not a fraction. Volatility is in the MIDDLE of its own 52-week range — no strong volatility edge either way. Source: cboe.",
+  "openInTraderMatrix": {
+    "url": "https://www.tradermatrix.pro/ticker-search/AAPL/volatility?utm_source=mcp&utm_medium=ai&utm_campaign=get_iv_rank",
+    "label": "Open AAPL volatility on TraderMatrix"
+  }
+}

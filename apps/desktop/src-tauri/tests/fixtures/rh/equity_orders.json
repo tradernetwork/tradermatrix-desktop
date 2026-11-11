@@ -1,0 +1,4 @@
+{"data":{"orders":[
+ {"id":"eo-1","ref_id":"r1","instrument_id":"i1","symbol":"AAA","side":"buy","type":"limit","state":"filled","quantity":"10.00000000","cumulative_quantity":"10.00000000","price":"100.50000000","stop_price":null,"average_price":"100.45","fees":"0.00","dollar_based_amount":null,"time_in_force":"gfd","trigger":"immediate","created_at":"2026-01-05T15:00:00Z","executions":[{"id":"x1","price":"100.45","quantity":"10","timestamp":"2026-01-05T15:00:01Z"}],"reject_reason":null},
+ {"id":"eo-2","symbol":"BBB","side":"buy","type":"market","state":"queued","quantity":null,"price":null,"dollar_based_amount":{"amount":"250.00","currency_code":"USD"},"time_in_force":"gfd","trigger":"immediate","created_at":"2026-01-06T15:00:00Z"}
+],"next":""},"guide":"synthetic"}

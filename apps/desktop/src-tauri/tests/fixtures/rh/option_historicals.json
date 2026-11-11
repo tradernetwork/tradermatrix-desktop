@@ -1,0 +1,7 @@
+{"data":{"results":[
+ {"instrument_id":"0f3c2a1e-5b7d-4c9a-8e21-3a4b5c6d7e8f","occ_symbol":"AAA   261113C00085000","symbol":"AAA","interval":"day","bounds":"regular","bars":[
+  {"begins_at":"2026-11-02T00:00:00Z","open_price":"1.10","high_price":"1.30","low_price":"1.00","close_price":"1.25","session":"reg","interpolated":false},
+  {"begins_at":"2026-11-03T00:00:00Z","open_price":"1.25","high_price":"1.25","low_price":"1.25","close_price":"1.25","session":"reg","interpolated":true},
+  {"begins_at":"2026-11-04T00:00:00Z","open_price":"1.25","high_price":"1.60","low_price":"1.20","close_price":"1.55","session":"reg"},
+  null]}
+]},"guide":"synthetic"}

@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "added": false,
+  "ticker": "AAAA",
+  "list": {
+    "id": 101,
+    "name": "My Watchlist"
+  }
+}

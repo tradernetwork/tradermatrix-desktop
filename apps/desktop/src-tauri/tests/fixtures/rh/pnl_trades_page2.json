@@ -1,0 +1,3 @@
+{"data":{"account_number":"900000001","span":"month","next_cursor":"","trades":[
+ {"symbol":"AAA","side":"buy","quantity":"1","price":"99","realized_gain":"0","timestamp":"2026-11-01T15:30:00Z"}
+]},"guide":"synthetic"}

@@ -1,0 +1,7 @@
+{"_note":"SYNTHETIC, hand-written 2026-11-10 from the outputSchema entries in the Robinhood MCP tool schemas. No real watchlist was ever written to produce this.",
+ "create":{"data":{"watchlist":{"id":"aaaaaaaa-0000-4000-8000-0000000000c1","display_name":"Tech","icon_emoji":"x","display_description":"synthetic","item_count":0,"owner_type":"custom","allowed_object_types":["instrument"]}},"guide":"synthetic"},
+ "update":{"data":{"watchlist":{"id":"aaaaaaaa-0000-4000-8000-0000000000a1","display_name":"Renamed","icon_emoji":null,"item_count":3,"owner_type":"custom","allowed_object_types":["instrument"],"future_field":1}},"guide":"synthetic"},
+ "add":{"data":{"list_id":"aaaaaaaa-0000-4000-8000-0000000000a1","object_type":"instrument","operation":"create","status":"ok","symbols":["AAPL"],"currency_pair_ids":null,"index_ids":null},"guide":"synthetic"},
+ "remove":{"data":{"list_id":"aaaaaaaa-0000-4000-8000-0000000000a1","object_type":"instrument","operation":"delete","status":"ok","symbols":["AAPL"]},"guide":"synthetic"},
+ "option_add":{"data":{"list_id":"aaaaaaaa-0000-4000-8000-0000000000e1","operation":"create","option_ids":["11111111-2222-4333-8444-555555555555"],"position_type":"long","status":"ok"},"guide":"synthetic"},
+ "option_remove":{"data":{"list_id":"aaaaaaaa-0000-4000-8000-0000000000e1","operation":"delete","option_ids":["11111111-2222-4333-8444-555555555555"],"position_type":"long","status":"ok"},"guide":"synthetic"}}

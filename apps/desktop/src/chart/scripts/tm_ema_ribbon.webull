@@ -1,0 +1,23 @@
+// TraderMatrix EMA Ribbon (original work, MIT, part of this repository).
+// Three EMAs drawn on the price pane. The fills turn green when the faster EMA is above the slower one, red when below.
+// Small circles mark the bar where the fast EMA crosses the mid EMA.
+
+fast_len = define(9, name="Fast EMA", min=1)
+mid_len = define(21, name="Mid EMA", min=1)
+slow_len = define(50, name="Slow EMA", min=1)
+
+fast = ind.ema(close, fast_len)
+mid = ind.ema(close, mid_len)
+slow = ind.ema(close, slow_len)
+
+p_fast = plt(fast, name="Fast EMA", color=color.white, line_width=1)
+p_mid = plt(mid, name="Mid EMA", color=color.yellow, line_width=2)
+p_slow = plt(slow, name="Slow EMA", color=color.gray, line_width=2)
+
+fill_fm = iff(fast >= mid, color.green, color.red)
+fill_ms = iff(mid >= slow, color.green, color.red)
+plt.fill_between(p_fast, p_mid, color=fill_fm, opacity=25, name="Fast-Mid Fill")
+plt.fill_between(p_mid, p_slow, color=fill_ms, opacity=25, name="Mid-Slow Fill")
+
+plt(iff(crossover(fast, mid), low, none), name="Cross Up", color=color.lime, type=plt.type_circles, line_width=3)
+plt(iff(crossunder(fast, mid), high, none), name="Cross Down", color=color.red, type=plt.type_circles, line_width=3)

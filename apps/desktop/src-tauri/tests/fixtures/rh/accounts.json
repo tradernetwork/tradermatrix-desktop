@@ -1,0 +1,5 @@
+{"data":{"accounts":[
+ {"account_number":"SYN00000001","rhs_account_number":"900000001","type":"margin","unsettled_funds":"0.00","brokerage_account_type":"individual","nickname":"Synthetic main","is_default":true,"agentic_allowed":false,"option_level":"option_level_2","state":"active","deactivated":false,"some_future_field":{"x":1}},
+ {"account_number":"SYN00000002","rhs_account_number":"900000002","rhc_account_number":"RHC0000002","type":"limited_margin","unsettled_funds":null,"is_default":false,"agentic_allowed":true,"option_level":null,"management_type":"agentic"},
+ null
+]},"guide":"synthetic"}

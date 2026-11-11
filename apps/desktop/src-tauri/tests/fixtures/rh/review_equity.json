@@ -1,0 +1,6 @@
+{"data":{"symbol":"AAA","side":"buy","type":"limit","quantity":"1","limit_price":"90.00",
+ "quote_data":{"symbol":"AAA","bid_price":"100.10","ask_price":"100.20","last_trade_price":"100.15","has_traded":true,"some_future_field":1},
+ "market_data_disclosure":"SYNTHETIC NBBO 100.10 x 100 / 100.20 x 200, last 100.15",
+ "order_checks":{},
+ "customer_approval_required":true,"customer_approval_required_reason":"account_setting"},
+ "guide":"synthetic"}

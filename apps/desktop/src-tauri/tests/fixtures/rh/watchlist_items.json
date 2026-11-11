@@ -1,0 +1,5 @@
+{"data":{"items":[
+ {"object_id":"o1","object_type":"instrument","symbol":"AAA"},
+ {"object_id":"o2","object_type":"instrument","symbol":"BBB"},
+ {"object_id":"o3","object_type":"currency_pair","symbol":"BTC-USD"}
+],"has_futures_contracts":false,"display_name":"Synthetic list","owner_type":"custom"},"guide":"synthetic"}
