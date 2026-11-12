@@ -1,6 +1,6 @@
 # Screenshots
 
-The README gallery links to the files below. The eight dev-page shots are in the repository, captured from the built-in sample-data backend. `unlock` and `layout` only exist in the real app and are not captured yet, so they are not linked from the main README. Capture at a **1536x864** viewport, PNG, no browser chrome.
+The README gallery links to the files below. The eight dev-page shots are in the repository, captured from the built-in sample-data backend. `layout` is a real-app capture (account suffix boxed out, window chrome cropped) and is linked from the main README. `unlock` only exists in the real app and is not captured yet, so it is not linked. Capture at a **1536x864** viewport, PNG, no browser chrome.
 
 Dev pages render the real UI against a fake backend (a red FAKE DATA banner is visible, crop it or keep it). They are built only with `REBULL_DEV_PAGES=1`. To serve them:
 

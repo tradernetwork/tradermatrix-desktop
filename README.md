@@ -76,7 +76,10 @@ SQLite for layouts, settings, journal notes, chat threads and candles. Candles y
 
 ## Screenshot gallery
 
-Images live in `docs/screenshots/`. Every shot here uses the built-in sample-data backend: no real account, no real prices, no real orders. See [docs/screenshots/README.md](docs/screenshots/README.md) for how each one is captured.
+Images live in `docs/screenshots/`. The first shot is the real app (account number hidden); the rest use the built-in sample-data backend: no real account, no real prices, no real orders. See [docs/screenshots/README.md](docs/screenshots/README.md) for how each one is captured.
+
+![The full desk: ticket, chart, TraderMatrix insight and watchlist](docs/screenshots/layout.png)
+*The real app: order ticket on the left, chart in the middle with Options, Journal and R Stats tabs, TraderMatrix insight and watchlist on the right, positions, orders and alerts below.*
 
 ![Chart with TraderMatrix overlay and volume](docs/screenshots/hero-chart.png)
 *Candles with Apex levels, gamma flip, expected-move band and estimated buy/sell volume.*
