@@ -13,7 +13,8 @@ export interface Placement {
 /**
  * The default layout, in creation order: the TraderMatrix desk arrangement (M9). The CHART is the anchor and stays dominant in the
  * centre (dockview ignores initialWidth/initialHeight on the first panel): order ticket on its LEFT rail, TM Insight on its RIGHT rail
- * with the Watchlist BELOW it, options and journal tabbed with the chart, positions and orders in a short group below the chart.
+ * with the Watchlist BELOW it, options and journal tabbed with the chart, positions and orders in a short (M22: 150 px) group below the chart.
+ * Rail widths and the bottom height are re-derived from the dock size in defaultLayout.applyDefaultLayout (narrow windows get narrower rails).
  */
 export const DEFAULT_ORDER: readonly PanelId[] = ['chart', 'ticket', 'tm', 'explain', 'watchlist', 'options', 'journal', 'rstats', 'positions', 'orders', 'alerts']
 
@@ -26,7 +27,7 @@ export const PLACEMENT: Record<PanelId, Placement> = {
   options: { ref: 'chart', direction: 'within', extra: { inactive: true } },
   journal: { ref: 'chart', direction: 'within', extra: { inactive: true } },
   rstats: { ref: 'journal', direction: 'within', extra: { inactive: true } },
-  positions: { ref: 'chart', direction: 'below', extra: { initialHeight: 210 } },
+  positions: { ref: 'chart', direction: 'below', extra: { initialHeight: 150 } },
   orders: { ref: 'positions', direction: 'within', extra: { inactive: true } },
   alerts: { ref: 'positions', direction: 'within', extra: { inactive: true } },
 }

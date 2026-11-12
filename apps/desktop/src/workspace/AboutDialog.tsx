@@ -4,8 +4,11 @@ import { APP_VERSION, NOT_AFFILIATED, PRODUCT_NAME, RH_SCOPE_NOTE } from '../lib
 import { useUiStore } from '../stores/ui'
 
 /** About: name, version, license pointers, the not-affiliated line, and the background-art switch. Opens from the toolbar. */
-export function AboutDialog() {
-  const [open, setOpen] = useState(false)
+export function AboutDialog({ open: ctrlOpen, onOpenChange, showButton = true }: { open?: boolean; onOpenChange?: (o: boolean) => void; showButton?: boolean } = {}) {
+  // M22: the toolbar may own the open state (the About button can live in its "..." menu); standalone use keeps its own
+  const [inner, setInner] = useState(false)
+  const open = ctrlOpen ?? inner
+  const setOpen = (o: boolean) => (onOpenChange ? onOpenChange(o) : setInner(o))
   const backgrounds = useUiStore((s) => s.backgrounds)
   useEffect(() => {
     if (!open) return
@@ -16,9 +19,11 @@ export function AboutDialog() {
   }, [open])
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} title={`About ${PRODUCT_NAME}`}>
-        About
-      </button>
+      {showButton && (
+        <button type="button" onClick={() => setOpen(true)} title={`About ${PRODUCT_NAME}`}>
+          About
+        </button>
+      )}
       {open && (
         <div className="about-backdrop" onClick={() => setOpen(false)}>
           <div className="about-card" role="dialog" aria-modal="true" aria-label={`About ${PRODUCT_NAME}`} onClick={(e) => e.stopPropagation()}>

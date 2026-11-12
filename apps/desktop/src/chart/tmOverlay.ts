@@ -33,6 +33,20 @@ export const MAX_LEVELS = 8
 export const CHIP_H = 14
 export const MIN_LABEL_GAP = CHIP_H + 1
 const LABEL_PAD = 4
+
+/** M22: below this plot height the EM labels go and only the nearest Apex chips (plus the flip) stay; below LINES_BELOW only lines and a count badge. */
+export const REDUCED_BELOW_PX = 220
+export const LINES_BELOW_PX = 140
+export const NEAREST_APEX_CHIPS = 3
+export type ChipDetail = 'full' | 'reduced' | 'lines'
+
+/** How much label detail a plot of this height can carry. An unknown height keeps everything (the old behaviour). */
+export function chipDetail(plotHeight: number): ChipDetail {
+  if (!Number.isFinite(plotHeight)) return 'full'
+  if (plotHeight < LINES_BELOW_PX) return 'lines'
+  if (plotHeight < REDUCED_BELOW_PX) return 'reduced'
+  return 'full'
+}
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 /** Trimmed price text: 355 -> "355", 362.5 -> "362.5". */
@@ -62,6 +76,9 @@ interface Pending {
   text: string
   y: number
   color: string
+  kind: 'em' | 'apex' | 'flip'
+  /** distance of an Apex level from the last price (for the nearest-3 rule) */
+  dist?: number
 }
 
 const bandOk = (b: TmBand | null | undefined): b is { low: number; high: number } => !!b && fin(b.low) && fin(b.high) && b.low <= b.high
@@ -75,6 +92,7 @@ export function planTmOverlay(data: TmOverlayData, m: Mapper, spot: number): Dra
   const bottom = m.bottom ?? Infinity
   if (!fin(x0) || !fin(x1) || x1 <= x0) return ops
   const inside = (y: number) => fin(y) && y >= top && y <= bottom
+  const detail = chipDetail(top === -Infinity || bottom === Infinity ? NaN : bottom - top)
   const labTop = (fin(top) ? top : 0) + CHIP_H / 2
   const labBottom = fin(bottom) ? bottom - CHIP_H / 2 : Number.MAX_SAFE_INTEGER
 
@@ -96,7 +114,7 @@ export function planTmOverlay(data: TmOverlayData, m: Mapper, spot: number): Dra
         const bt = Math.min(Math.max(yh, yl), bottom)
         if (bt <= t) return // fully outside the visible price range
         ops.push({ kind: 'rect', x: bx0, y: t, w: x1 - bx0, h: bt - t, color: c.range, alpha })
-        chips.push({ text: `EM ${tag} ${fmtLevel(b.low)}-${fmtLevel(b.high)}`, y: t + CHIP_H / 2 + 1, color: c.range })
+        chips.push({ text: `EM ${tag} ${fmtLevel(b.low)}-${fmtLevel(b.high)}`, y: t + CHIP_H / 2 + 1, color: c.range, kind: 'em' })
       }
       band(h.band95, 0.06, '95%')
       band(h.band68, 0.12, '68%')
@@ -110,7 +128,7 @@ export function planTmOverlay(data: TmOverlayData, m: Mapper, spot: number): Dra
       const y = m.y(apex.gamma_flip)
       if (inside(y)) {
         ops.push({ kind: 'hline', y, color: c.flip, width: 1.5, dash: [6, 4], x0, x1 })
-        chips.push({ text: `γ FLIP ${apex.gamma_flip.toFixed(2)}`, y, color: c.flip })
+        chips.push({ text: `γ FLIP ${apex.gamma_flip.toFixed(2)}`, y, color: c.flip, kind: 'flip' })
       }
     }
     if (data.show.apex) {
@@ -125,12 +143,26 @@ export function planTmOverlay(data: TmOverlayData, m: Mapper, spot: number): Dra
         const color = above ? c.hot : c.support
         const width = 1 + 2 * Math.min(1, Math.max(0, l.score / 100))
         ops.push({ kind: 'hline', y, color, width, dash: [5, 4], x0, x1, alpha: 0.8 })
-        chips.push({ text: `APEX ${fmtLevel(l.strike)} · ${fmtLevel(l.score)}`, y, color })
+        chips.push({ text: `APEX ${fmtLevel(l.strike)} · ${fmtLevel(l.score)}`, y, color, kind: 'apex', dist: fin(spot) ? Math.abs(l.strike - spot) : 0 })
       }
     }
   }
-  const ys = spreadLabels(chips.map((l) => l.y), MIN_LABEL_GAP, labTop, labBottom)
-  chips.forEach((l, i) => {
+  // M22: a short plot cannot carry every label. Lines and bands always stay; only the chips thin out.
+  let shown = chips
+  if (detail === 'reduced') {
+    const nearest = new Set(
+      chips
+        .filter((l) => l.kind === 'apex')
+        .sort((a, b) => (a.dist ?? 0) - (b.dist ?? 0))
+        .slice(0, NEAREST_APEX_CHIPS),
+    )
+    shown = chips.filter((l) => l.kind === 'flip' || nearest.has(l))
+  } else if (detail === 'lines') {
+    const n = ops.filter((o) => o.kind === 'hline').length
+    shown = n > 0 ? [{ text: `${n} level${n === 1 ? '' : 's'}`, y: labTop, color: c.range, kind: 'flip' }] : []
+  }
+  const ys = spreadLabels(shown.map((l) => l.y), MIN_LABEL_GAP, labTop, labBottom)
+  shown.forEach((l, i) => {
     if (fin(ys[i]!)) ops.push({ kind: 'chip', text: l.text, x: x0 + LABEL_PAD, y: ys[i]!, color: l.color, ink: c.ink })
   })
   return ops.filter((op) => Object.values(op).every((v) => typeof v !== 'number' || Number.isFinite(v)))

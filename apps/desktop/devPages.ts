@@ -13,6 +13,7 @@ export function rollupInputs(env: Record<string, string | undefined>): Record<st
     input.chatDev = 'chat-dev.html'
     input.alertsDev = 'alerts-dev.html'
     input.riskDev = 'risk-dev.html'
+    input.workspaceDev = 'workspace-dev.html'
   }
   return input
 }

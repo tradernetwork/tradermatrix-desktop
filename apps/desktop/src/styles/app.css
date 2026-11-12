@@ -2387,3 +2387,288 @@ table.kv td,
   text-overflow: ellipsis;
   align-self: center;
 }
+
+/* ===== M22 layout polish: density rows, one-row toolbar and header, nowrap pills, one-line metrics strip =====
+   Row heights are fixed (never two-row wraps) so lib/layoutBudget.ts can predict the chart plot height; keep the two in step. */
+.app {
+  --row-toolbar: 44px;
+  --row-header: 44px;
+  --row-strip: 28px;
+  --row-chart: 30px;
+}
+.app[data-density='compact'] {
+  --row-toolbar: 36px;
+  --row-header: 32px;
+  --row-strip: 26px;
+  --row-chart: 26px;
+}
+.toolbar {
+  box-sizing: border-box;
+  height: var(--row-toolbar);
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  padding: 0 10px;
+  gap: 8px;
+  min-width: 0;
+  position: relative;
+  z-index: 30;
+}
+.toolbar > *,
+.tm-key-wrap {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.toolbar .spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.toolbar .err,
+.toolbar .note {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toolbar .link-fallback {
+  width: 14ch;
+  min-width: 0;
+}
+.rh-scope-note {
+  flex: 0 1 auto !important;
+  min-width: 0;
+}
+.app[data-density='compact'] .toolbar button,
+.app[data-density='compact'] .toolbar select,
+.app[data-density='compact'] .toolbar input {
+  padding: 1px 7px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.brand-mark {
+  margin-right: 4px;
+  flex: 0 0 auto;
+}
+
+/* status pills: always one line, rounded rectangle, same height (they used to shrink into circles inside the flex toolbar) */
+.pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  box-sizing: border-box;
+  height: 22px;
+  line-height: 16px;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+.pill .pill-text {
+  white-space: nowrap;
+}
+.tm-quota {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.toolbar.pills-dots .pill .pill-text {
+  display: none;
+}
+.toolbar.pills-dots .pill {
+  padding: 2px 7px;
+}
+
+.layouts-wrap,
+.more-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+.layouts-pop,
+.more-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--tm-surface-2);
+  border: 1px solid var(--tm-border-line);
+  border-radius: 6px;
+}
+.layouts-pop {
+  left: 0;
+  width: 270px;
+}
+.more-pop {
+  right: 0;
+  min-width: 170px;
+  align-items: stretch;
+}
+.layouts-row {
+  display: flex;
+  gap: 6px;
+}
+.layouts-row input {
+  flex: 1;
+  min-width: 0;
+}
+.layouts-pop select {
+  min-width: 0;
+  width: 100%;
+}
+
+/* desk header: ONE row, chips right-aligned and collapsing; metrics as one line */
+.desk-header {
+  gap: 0;
+  padding: 0 10px;
+}
+.desk-top {
+  box-sizing: border-box;
+  height: var(--row-header);
+  flex-wrap: nowrap;
+  gap: 12px;
+  min-width: 0;
+}
+.desk-top > * {
+  flex: 0 0 auto;
+}
+.desk-top > .desk-chips {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  margin-left: 0;
+  position: relative;
+}
+.app[data-density='compact'] .desk-price {
+  font-size: 20px;
+}
+.desk-chip {
+  flex: 0 0 auto;
+  height: 20px;
+  box-sizing: border-box;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.desk-chip.dot {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+.desk-chip.stat {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-family: var(--font-mono);
+}
+.desk-chip.stat::before {
+  display: none;
+}
+.desk-more {
+  position: relative;
+  flex: 0 0 auto;
+}
+.desk-more-btn,
+.strip-toggle {
+  background: var(--tm-surface-2);
+  color: var(--tm-text-secondary);
+  border: 1px solid var(--tm-border-hair);
+  border-radius: 4px;
+  font: inherit;
+  line-height: 14px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.desk-more-btn:hover,
+.strip-toggle:hover {
+  border-color: var(--tm-gold);
+}
+.desk-more-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+  background: var(--tm-surface-2);
+  border: 1px solid var(--tm-border-line);
+  border-radius: 6px;
+}
+.desk-line {
+  box-sizing: border-box;
+  height: var(--row-strip);
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+  border-top: 1px solid var(--tm-border-hair);
+}
+.desk-line .line-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+.desk-line .k {
+  color: var(--tm-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+.desk-line .v {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.desk-line .v.bull {
+  color: var(--tm-bull);
+}
+.desk-line .v.bear {
+  color: var(--tm-bear);
+}
+.desk-line .sep {
+  color: var(--tm-text-dim);
+  font-style: normal;
+  margin-right: 5px;
+}
+.desk-line .strip-toggle,
+.desk-strip .strip-toggle {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.desk-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+}
+.desk-strip .metric {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+.desk-strip .strip-toggle {
+  flex: 0 0 24px;
+  align-self: flex-start;
+}
+
+/* chart toolbar: tighter rows in compact density; the storage readout hides (the status line stays) */
+.app[data-density='compact'] .chart-head {
+  padding: 3px 8px;
+  gap: 4px 6px;
+}
+.app[data-density='compact'] .chart-head button,
+.app[data-density='compact'] .chart-head select,
+.app[data-density='compact'] .chart-head input {
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.app[data-density='compact'] .chart-store {
+  display: none;
+}

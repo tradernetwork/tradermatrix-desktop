@@ -10,6 +10,9 @@ const NOW = Date.UTC(2026, 11 - 1, 11, 15, 0, 0)
 const MIDNIGHT = Date.UTC(2026, 11 - 1, 12, 0, 0, 0)
 
 beforeEach(() => {
+  // pin the wall clock: the store reads Date.now(), and these fixtures name absolute days (a real clock crossing midnight broke them)
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(NOW)
   fake.reset()
   fakeTm.reset()
   useTmStore.getState().reset()

@@ -6,7 +6,7 @@ import { disconnectSession } from '../stores/session'
 import { useMask } from './useMask'
 
 /** Robinhood connect control. States: Disconnected, Connecting (browser opened), Connected, Error. */
-export function ConnectButton() {
+export function ConnectButton({ showScope = true }: { showScope?: boolean } = {}) {
   const { status, connecting, connectError, connect, refreshStatus, captureNote, loginLinkNote, loginLinkFallback } = useRhStore()
   const mask = useMask()
   const vault = useVaultStore((s) => s.status)
@@ -63,7 +63,7 @@ export function ConnectButton() {
       <button onClick={() => void connect()} disabled={locked} title={locked ? 'Unlock the vault first' : 'Log in to Robinhood in your browser'}>
         {state === 'error' ? 'Retry Robinhood' : 'Connect Robinhood'}
       </button>
-      <span className="small muted rh-scope-note" title={RH_SCOPE_NOTE}>{RH_SCOPE_NOTE}</span>
+      {showScope && <span className="small muted rh-scope-note" title={RH_SCOPE_NOTE}>{RH_SCOPE_NOTE}</span>}
       {state === 'error' && (
         <span className="err" title={mask(connectError)}>
           {mask(connectError).length > 70 ? mask(connectError).slice(0, 70) + '...' : mask(connectError)}

@@ -1,6 +1,6 @@
 import type { DockviewApi } from 'dockview-react'
 import { describe, expect, it, vi } from 'vitest'
-import { applyDefaultLayout, AUTOSAVE_NAME, toggleChartFocus } from '../src/workspace/defaultLayout'
+import { applyDefaultLayout, AUTOSAVE_NAME, bottomCollapsed, toggleBottomPanel, toggleChartFocus } from '../src/workspace/defaultLayout'
 import { PANEL_IDS } from '../src/workspace/panelIds'
 
 type Opt = { id: string; initialWidth?: number; initialHeight?: number; inactive?: boolean; position?: { referencePanel: string; direction: string } }
@@ -37,12 +37,12 @@ describe('applyDefaultLayout (M9 TM desk arrangement)', () => {
     expect(opts.find((o) => o.id === 'orders')!.position).toEqual({ referencePanel: 'positions', direction: 'within' })
   })
 
-  it('sizes: ticket 300, TM 320, watchlist ~260 high, bottom group 210', () => {
+  it('sizes (unmeasured dock): ticket 300, TM 320, watchlist ~260 high, bottom group 150 (M22)', () => {
     const opts = defaults()
     expect(opts.find((o) => o.id === 'ticket')!.initialWidth).toBe(300)
     expect(opts.find((o) => o.id === 'tm')!.initialWidth).toBe(320)
     expect(opts.find((o) => o.id === 'watchlist')!.initialHeight).toBe(260)
-    expect(opts.find((o) => o.id === 'positions')!.initialHeight).toBe(210)
+    expect(opts.find((o) => o.id === 'positions')!.initialHeight).toBe(150)
   })
 })
 
@@ -59,7 +59,7 @@ describe('R-stats panel (M18b)', () => {
 
 describe('layout key version', () => {
   it('the autosave slot is versioned so the pre-M9 arrangement is not restored over the new default', () => {
-    expect(AUTOSAVE_NAME).toBe('__autosave_v2')
+    expect(AUTOSAVE_NAME).toBe('__autosave_v3')
   })
 })
 
@@ -82,5 +82,42 @@ describe('toggleChartFocus', () => {
     const api = { getPanel: () => undefined, hasMaximizedGroup: () => false, maximizeGroup: vi.fn(), exitMaximizedGroup: vi.fn() } as unknown as DockviewApi
     expect(toggleChartFocus(api)).toBe(false)
     expect(api.maximizeGroup).not.toHaveBeenCalled()
+  })
+})
+
+describe('M22 measured dock and the bottom group toggle', () => {
+  const sized = (width: number, height: number) => {
+    const addPanel = vi.fn()
+    applyDefaultLayout({ addPanel, width, height } as unknown as DockviewApi)
+    return addPanel.mock.calls.map((c) => c[0] as Opt)
+  }
+  it('narrow window: narrower rails; short dock: the bottom group is a quarter of it', () => {
+    const o = sized(1172, 600)
+    expect(o.find((x) => x.id === 'ticket')!.initialWidth).toBe(260)
+    expect(o.find((x) => x.id === 'tm')!.initialWidth).toBe(290)
+    expect(o.find((x) => x.id === 'positions')!.initialHeight).toBe(150)
+    expect(sized(1172, 400).find((x) => x.id === 'positions')!.initialHeight).toBe(100)
+  })
+  it('wide window keeps 300 / 320', () => {
+    const o = sized(1536, 700)
+    expect(o.find((x) => x.id === 'ticket')!.initialWidth).toBe(300)
+    expect(o.find((x) => x.id === 'tm')!.initialWidth).toBe(320)
+  })
+  const mkDock = (height: number) => {
+    const group = { height, api: { setSize: vi.fn(({ height: h }: { height: number }) => { group.height = h }), setConstraints: vi.fn() } }
+    const chartGroup = { height: 600 }
+    const dock = { getPanel: (id: string) => (id === 'positions' ? { group } : id === 'chart' ? { group: chartGroup } : undefined) } as unknown as DockviewApi
+    return { dock, group }
+  }
+  it('one click collapses to the tab strip, the next restores the old height', () => {
+    const { dock, group } = mkDock(180)
+    expect(toggleBottomPanel(dock)).toBe(true)
+    expect(group.height).toBe(35)
+    expect(bottomCollapsed(dock)).toBe(true)
+    expect(toggleBottomPanel(dock)).toBe(false)
+    expect(group.height).toBe(180)
+  })
+  it('the group is missing or shares the chart group: nothing happens', () => {
+    expect(toggleBottomPanel({ getPanel: () => undefined } as unknown as DockviewApi)).toBe(false)
   })
 })

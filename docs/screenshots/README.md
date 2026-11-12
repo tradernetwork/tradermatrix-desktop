@@ -1,6 +1,6 @@
 # Screenshots
 
-The README gallery links to the files below. The eight dev-page shots are in the repository, captured from the built-in sample-data backend. `layout` is a real-app capture (account suffix boxed out, window chrome cropped) and is linked from the main README. `unlock` only exists in the real app and is not captured yet, so it is not linked. Capture at a **1536x864** viewport, PNG, no browser chrome.
+The README gallery links to the files below. The eight dev-page shots are in the repository, captured from the built-in sample-data backend. `layout` is captured from `workspace-dev.html?w=1500&h=640&tm=1&symbol=AAPL` with the bottom panel collapsed (sample data, banner cropped). `unlock` only exists in the real app and is not captured yet, so it is not linked. Capture at a **1536x864** viewport, PNG, no browser chrome.
 
 Dev pages render the real UI against a fake backend (a red FAKE DATA banner is visible, crop it or keep it). They are built only with `REBULL_DEV_PAGES=1`. To serve them:
 
@@ -24,6 +24,6 @@ python3 -I -m http.server -b 127.0.0.1 -d dist 8081
 | `alerts.png` | Chart with alert lines, bells and a toast | **Not captured yet.** `chart-dev.html?symbol=AAPL&tf=15m&tm=1`, right-click for an alert (no quote poller runs on the fake page) |
 | `r-tools.png` | Ticket size helper, journal R column, R-stats panel and heat | **Not captured yet.** Needs a dev-page pass with the fake risk backend |
 | `unlock.png` | Vault unlock screen | **Real app only**: launch the release binary with no vault, or lock an existing one |
-| `layout.png` | Full three-column layout | **Real app only**: the default layout after connecting accounts (the fake pages mount single panes) |
+| `layout.png` | Full three-column layout | `workspace-dev.html?w=1500&h=640&tm=1&symbol=AAPL`, then click the bottom-panel toggle in the toolbar |
 
-Real app only: `unlock`, `layout`. Any shot taken in the real app must be redacted first: account numbers are already masked in the UI, but check symbols, balances and any visible keys before committing.
+Real app only: `unlock`. Any shot taken in the real app must be redacted first: account numbers are already masked in the UI, but check symbols, balances and any visible keys before committing.

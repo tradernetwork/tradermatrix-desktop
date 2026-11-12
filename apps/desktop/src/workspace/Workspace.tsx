@@ -1,5 +1,8 @@
 import { DockviewReact, type DockviewReadyEvent, type DockviewApi, type IDockviewPanelProps } from 'dockview-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { resolveDensity } from '../lib/layoutBudget'
+import { useUiStore } from '../stores/ui'
+import { useElWidth } from './useElWidth'
 import { setActiveDock } from './activeDock'
 import { startAlertFeeds } from '../stores/alertFeeds'
 import { AlertToast } from './AlertToast'
@@ -22,6 +25,10 @@ export function Workspace() {
   const [dock, setDock] = useState<DockviewApi | null>(null)
   const dispose = useRef<(() => void) | null>(null)
   const { load, autosave, refresh } = useLayoutStore.getState()
+  const appRef = useRef<HTMLDivElement>(null)
+  const appW = useElWidth(appRef)
+  const savedDensity = useUiStore((s) => s.density)
+  const density = resolveDensity(savedDensity, appW > 0 ? appW : typeof window === 'undefined' ? 1536 : window.innerWidth)
 
   const onReady = useCallback(
     (e: DockviewReadyEvent) => {
@@ -58,7 +65,7 @@ export function Workspace() {
   }, [])
 
   return (
-    <div className="app">
+    <div className="app" ref={appRef} data-density={density}>
       <FakeBanner />
       <ErrorBoundary label="Toolbar">
         <VaultGate />

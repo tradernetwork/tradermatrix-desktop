@@ -39,7 +39,7 @@ export function TmQuotaChip() {
     <span className="tm-quota" data-testid="tm-quota">
       {chips.map((c) => (
         <span key={c.text} className={`pill tm-quota-chip ${c.tone === 'ok' ? 'ok' : c.tone === '' ? '' : c.tone === 'warn' ? 'warn' : 'bad'}`} title={c.title}>
-          {c.text}
+          <span className="pill-text">{c.text}</span>
         </span>
       ))}
     </span>

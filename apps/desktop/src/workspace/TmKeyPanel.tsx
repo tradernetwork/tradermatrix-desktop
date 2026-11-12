@@ -93,7 +93,7 @@ export function TmKeyPanel() {
         TM key
       </button>
       <span className={`pill ${pill.cls}`} title={pill.title}>
-        {pill.text}
+        <span className="pill-text">{pill.text}</span>
       </span>
       <TmQuotaChip />
       {open && (
